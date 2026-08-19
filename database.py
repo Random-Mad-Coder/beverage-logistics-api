@@ -1,10 +1,10 @@
 from sqlmodel import SQLModel, Session, create_engine
 
-# Eine Datei reicht - kein DB-Server nötig für den Minimalbuild.
+# A single file is enough - no DB server needed for the minimal build.
 DATABASE_URL = "sqlite:///./fass_logistik.db"
 
-# check_same_thread=False ist bei SQLite + FastAPI Standard,
-# weil FastAPI Requests in Threads verarbeiten kann.
+# check_same_thread=False is standard for SQLite + FastAPI,
+# because FastAPI can process requests across threads.
 engine = create_engine(
     DATABASE_URL, echo=True, connect_args={"check_same_thread": False}
 )

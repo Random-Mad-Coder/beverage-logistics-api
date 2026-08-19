@@ -4,8 +4,8 @@ from typing import Optional
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlmodel import Session, select
 
-from app.database import create_db_and_tables, get_session
-from app.models import (
+from database import create_db_and_tables, get_session
+from models import (
     Delivery,
     DeliveryCreate,
     DeliveryRead,
@@ -18,7 +18,7 @@ from app.models import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Tabellen beim Start anlegen, falls sie noch nicht existieren.
+    # Create tables here in case they don't exist yet.
     create_db_and_tables()
     yield
 
@@ -31,14 +31,14 @@ app = FastAPI(title="Fass-Logistik-API", lifespan=lifespan)
 @app.get("/kegs", response_model=list[KegRead])
 def list_kegs(
     status: Optional[str] = Query(default=None),
-    sorte: Optional[str] = Query(default=None),
+    variety: Optional[str] = Query(default=None),
     session: Session = Depends(get_session),
 ):
     query = select(Keg)
     if status:
         query = query.where(Keg.status == status)
-    if sorte:
-        query = query.where(Keg.sorte == sorte)
+    if variety:
+        query = query.where(Keg.variety == variety)
     return session.exec(query).all()
 
 
@@ -79,15 +79,15 @@ def update_keg_status(
 def create_delivery(
     delivery: DeliveryCreate, session: Session = Depends(get_session)
 ):
-    db_delivery = Delivery(datum=delivery.datum, kunde=delivery.kunde)
+    db_delivery = Delivery(date=delivery.date, customer=delivery.customer)
     db_delivery.set_keg_ids(delivery.keg_ids)
     session.add(db_delivery)
     session.commit()
     session.refresh(db_delivery)
     return DeliveryRead(
         id=db_delivery.id,
-        datum=db_delivery.datum,
-        kunde=db_delivery.kunde,
+        date=db_delivery.date,
+        customer=db_delivery.customer,
         keg_ids=db_delivery.get_keg_ids(),
     )
 
@@ -96,10 +96,10 @@ def create_delivery(
 def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
     delivery = session.get(Delivery, delivery_id)
     if not delivery:
-        raise HTTPException(status_code=404, detail="Lieferung nicht gefunden")
+        raise HTTPException(status_code=404, detail="Delivery not found")
     return DeliveryRead(
         id=delivery.id,
-        datum=delivery.datum,
-        kunde=delivery.kunde,
+        date=delivery.date,
+        customer=delivery.customer,
         keg_ids=delivery.get_keg_ids(),
     )

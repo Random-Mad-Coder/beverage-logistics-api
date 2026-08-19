@@ -1,9 +1,9 @@
-"""Datenmodell: Keg (Fass) und Delivery (Lieferung).
+"""Data model: Keg and Delivery.
 
-Bewusst minimal gehalten (Minimalbuild):
-- Keg: id, groesse, sorte, status
-- Delivery: id, datum, kunde, keg_ids (als JSON-String in SQLite gespeichert,
-  nach außen als Liste von ints)
+Kept deliberately minimal (minimal build):
+- Keg: id, size, variety, status
+- Delivery: id, date, customer, keg_ids (stored as a JSON string in SQLite,
+  exposed externally as a list of ints)
 """
 import json
 from datetime import date
@@ -15,8 +15,8 @@ from sqlmodel import SQLModel, Field
 # ---------- Keg ----------
 
 class KegBase(SQLModel):
-    groesse: str  # "20l", "30l", "50l"
-    sorte: str    # "Pils", "Weizen", ...
+    size: str  # "20l", "30l", "50l"
+    variety: str    # "Pils", "Weizen", ...
     status: str = "LEER"  # VOLL, UNTERWEGS, LEER, GEREINIGT
 
 
@@ -39,14 +39,14 @@ class KegStatusUpdate(SQLModel):
 # ---------- Delivery ----------
 
 class DeliveryBase(SQLModel):
-    datum: date
-    kunde: str
+    date: date
+    customer: str
 
 
 class Delivery(DeliveryBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    # SQLite kann keine Listen speichern -> als JSON-Text ablegen.
-    # Nach außen (API) sehen Clients ganz normal eine Liste von ints.
+    # SQLite cannot store lists -> stored as JSON text.
+    # Externally (API) clients just see a normal list of ints.
     keg_ids_json: str = "[]"
 
     def get_keg_ids(self) -> list[int]:
