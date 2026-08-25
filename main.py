@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -55,7 +56,7 @@ def create_keg(keg: KegCreate, session: Session = Depends(get_session)):
 def get_keg(keg_id: int, session: Session = Depends(get_session)):
     keg = session.get(Keg, keg_id)
     if not keg:
-        raise HTTPException(status_code=404, detail="Fass nicht gefunden")
+        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
     return keg
 
 
@@ -65,7 +66,7 @@ def update_keg_status(
 ):
     keg = session.get(Keg, keg_id)
     if not keg:
-        raise HTTPException(status_code=404, detail="Fass nicht gefunden")
+        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
     keg.status = update.status
     session.add(keg)
     session.commit()
@@ -73,7 +74,33 @@ def update_keg_status(
     return keg
 
 
+@app.delete("/kegs/{keg_id}", status_code=204)
+def delete_keg(keg_id: int, session: Session = Depends(get_session)):
+    keg = session.get(Keg, keg_id)
+    if not keg:
+        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
+    session.delete(keg)
+    session.commit()
+
+
 # ---------- Deliveries ----------
+
+@app.get("/deliveries", response_model=list[DeliveryRead])
+def list_deliveries(
+    date: Optional[date] = Query(default=None),
+    customer: Optional[str] = Query(default=None),
+    session: Session = Depends(get_session)
+):
+    query = select(Delivery)
+    if date:
+        query = query.where(Delivery.date == date)
+    if customer:
+        query = query.where(Delivery.customer == customer)
+
+    deliveries = session.exec(query).all()
+
+    return [DeliveryRead(id=d.id, date=d.date, customer=d.customer, keg_ids=d.get_keg_ids()) for d in deliveries]
+
 
 @app.post("/deliveries", response_model=DeliveryRead, status_code=201)
 def create_delivery(
@@ -96,7 +123,63 @@ def create_delivery(
 def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
     delivery = session.get(Delivery, delivery_id)
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
+    return DeliveryRead(
+        id=delivery.id,
+        date=delivery.date,
+        customer=delivery.customer,
+        keg_ids=delivery.get_keg_ids(),
+    )
+
+
+@app.delete("/deliveries/{delivery_id}", status_code=204)
+def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
+    delivery = session.get(Delivery, delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
+    session.delete(delivery)
+    session.commit()
+
+
+@app.patch("/deliveries/{delivery_id}/metadata", response_model=DeliveryRead)
+def update_delivery_metadata(
+    delivery_id: int, update: DeliveryMetaDataUpdate, session: Session = Depends(get_session)
+):
+    delivery = session.get(Delivery, delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
+
+    if update.date:
+        delivery.date = update.date
+
+    if update.customer and update.customer.strip():
+        delivery.customer = update.customer
+
+    session.add(delivery)
+    session.commit()
+    session.refresh(delivery)
+
+    return DeliveryRead(
+        id=delivery.id,
+        date=delivery.date,
+        customer=delivery.customer,
+        keg_ids=delivery.get_keg_ids(),
+    )
+
+@app.patch("/deliveries/{delivery_id}/payload", response_model=DeliveryRead)
+def update_delivery_payload(
+    delivery_id: int, update: DeliveryPayloadUpdate, session: Session = Depends(get_session)
+):
+    delivery = session.get(Delivery, delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
+
+    delivery.set_keg_ids(update.keg_ids)
+
+    session.add(delivery)
+    session.commit()
+    session.refresh(delivery)
+
     return DeliveryRead(
         id=delivery.id,
         date=delivery.date,

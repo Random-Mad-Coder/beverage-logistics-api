@@ -16,8 +16,8 @@ from sqlmodel import SQLModel, Field
 
 class KegBase(SQLModel):
     size: str  # "20l", "30l", "50l"
-    variety: str    # "Pils", "Weizen", ...
-    status: str = "LEER"  # VOLL, UNTERWEGS, LEER, GEREINIGT
+    variety: str    # "Pilsen", "Wheat", ...
+    status: str = "EMPTY"  # EMPTY, IN_DELIVERY, CLEANED
 
 
 class Keg(KegBase, table=True):
@@ -62,4 +62,13 @@ class DeliveryCreate(DeliveryBase):
 
 class DeliveryRead(DeliveryBase):
     id: int
+    keg_ids: list[int]
+
+
+class DeliveryMetaDataUpdate(SQLModel):
+    date: Optional[date] = None
+    customer: Optional[str] = None
+
+
+class DeliveryPayloadUpdate(SQLModel):
     keg_ids: list[int]
