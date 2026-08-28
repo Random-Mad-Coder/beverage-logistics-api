@@ -3,13 +3,20 @@ from datetime import date
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from database import create_db_and_tables, get_session
 from models import (
+    ContainerType,
+    Status,
+    Variety,
+    InventoryReport,
     Delivery,
     DeliveryCreate,
     DeliveryRead,
+    DeliveryMetaDataUpdate,
+    DeliveryPayloadUpdate,
     Keg,
     KegCreate,
     KegRead,
@@ -26,13 +33,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Fass-Logistik-API", lifespan=lifespan)
 
+# ---------- Inventory ----------
+
+@app.get("/inventory", response_model=list[InventoryReport])
+def get_inventory(reserve: int, session: Session = Depends(get_session)):
+    query = select(Keg.variety, func.count()).where(Keg.status == Status.FULL).group_by(Keg.variety).having(func.count() < reserve)
+    result = session.exec(query).all()
+
+    return [InventoryReport(variety=variety, container_type=ContainerType.KEG, count=count) for (variety, count) in result]
+
 
 # ---------- Kegs ----------
 
 @app.get("/kegs", response_model=list[KegRead])
 def list_kegs(
-    status: Optional[str] = Query(default=None),
-    variety: Optional[str] = Query(default=None),
+    status: Optional[Status] = Query(default=None),
+    variety: Optional[Variety] = Query(default=None),
     session: Session = Depends(get_session),
 ):
     query = select(Keg)
