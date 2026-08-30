@@ -1,0 +1,38 @@
+erDiagram
+    BEVERAGE ||--o{ KEG : "filled into"
+    BEVERAGE ||--o{ CRATE : "filled into"
+    DELIVERY ||--o{ DELIVERY_KEG : contains
+    KEG ||--o{ DELIVERY_KEG : "included in"
+    DELIVERY ||--o{ DELIVERY_CRATE : contains
+    CRATE ||--o{ DELIVERY_CRATE : "included in"
+
+    BEVERAGE {
+        int id PK
+        string name
+        string type
+    }
+    KEG {
+        int id PK
+        string size
+        string status
+        int beverage_id FK
+    }
+    CRATE {
+        int id PK
+        string container_type
+        string status
+        int beverage_id FK
+    }
+    DELIVERY {
+        int id PK
+        date date
+        string customer
+    }
+    DELIVERY_KEG {
+        int delivery_id FK
+        int keg_id FK
+    }
+    DELIVERY_CRATE {
+        int delivery_id FK
+        int crate_id FK
+    }
