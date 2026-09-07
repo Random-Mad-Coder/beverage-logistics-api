@@ -10,6 +10,8 @@ from sqlmodel import SQLModel, Field
 
 class ContainerType(str, Enum):
     KEG = "keg"
+    CRATE_20X05L = "crate_20x05l"
+    CRATE_24X033L = "crate_24x033l"
 
 class Status(str, Enum):
     EMPTY = "empty"
@@ -46,6 +48,26 @@ class InventoryReport(SQLModel):
     beverage_name: str
     container_type: ContainerType
     count: int
+
+# ---------- Crate ----------
+
+class CrateBase(SQLModel):
+    container_type: ContainerType
+    beverage_id: int
+    status: Status = Status.EMPTY
+
+class Crate(CrateBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    beverage_id: int = Field(foreign_key="beverage.id")
+
+class CrateCreate(CrateBase):
+    pass
+
+class CrateRead(CrateBase):
+    id: int
+
+class CrateStatusUpdate(SQLModel):
+    status: Status
 
 # ---------- Keg ----------
 

@@ -15,6 +15,10 @@ from models import (
     Beverage,
     BeverageCreate,
     BeverageRead,
+    Crate,
+    CrateCreate,
+    CrateRead,
+    CrateStatusUpdate,
     Delivery,
     DeliveryCreate,
     DeliveryRead,
@@ -24,7 +28,7 @@ from models import (
     Keg,
     KegCreate,
     KegRead,
-    KegStatusUpdate,
+    KegStatusUpdate
 )
 
 
@@ -70,6 +74,14 @@ def list_beverages(
     return session.exec(query).all()
 
 
+@app.get("/beverages/{beverage_id}", response_model=BeverageRead)
+def get_beverage(beverage_id: int, session: Session = Depends(get_session)):
+    beverage = session.get(Beverage, beverage_id)
+    if not beverage:
+        raise HTTPException(status_code=404, detail=f"Beverage with id {beverage_id} not found")
+    return beverage
+
+
 @app.post("/beverages", response_model=BeverageRead, status_code=201)
 def create_beverage(beverage: BeverageCreate, session: Session = Depends(get_session)):
     db_beverage = Beverage.model_validate(beverage)
@@ -84,13 +96,6 @@ def create_beverage(beverage: BeverageCreate, session: Session = Depends(get_ses
     return db_beverage
 
 
-@app.get("/beverages/{beverage_id}", response_model=BeverageRead)
-def get_beverage(beverage_id: int, session: Session = Depends(get_session)):
-    beverage = session.get(Beverage, beverage_id)
-    if not beverage:
-        raise HTTPException(status_code=404, detail=f"Beverage with id {beverage_id} not found")
-    return beverage
-
 @app.delete("/beverages/{beverage_id}", status_code=204)
 def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
     beverage = session.get(Beverage, beverage_id)
@@ -102,6 +107,71 @@ def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
         session.commit()
     except IntegrityError:
         raise HTTPException(status_code=409, detail=f"Beverage with id {beverage_id} is still stocked")
+
+
+# ---------- Crates ----------
+
+@app.get("/crates", response_model=list[CrateRead])
+def list_crates(
+    beverage_name: Optional[str] = Query(default=None),
+    status: Optional[Status] = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    query = select(Crate)
+    if beverage_name:
+        query = query.join(Beverage, Crate.beverage_id == Beverage.id).where(Beverage.name == beverage_name)
+    if status:
+        query = query.where(Crate.status == status)
+
+    return session.exec(query).all()
+
+
+@app.get("/crates/{crate_id}", response_model=CrateRead)
+def get_crate(crate_id: int, session: Session = Depends(get_session)):
+    crate = session.get(Crate, crate_id)
+    if not crate:
+        raise HTTPException(status_code=404, detail=f"Crate with id {crate_id} not found")
+    return crate
+
+
+@app.post("/crates", response_model=CrateRead, status_code=201)
+def create_crate(crate: CrateCreate, session: Session = Depends(get_session)):
+    db_crate = Crate.model_validate(crate)
+    session.add(db_crate)
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Beverage with id {crate.beverage_id} does not exist")
+    session.refresh(db_crate)
+    return db_crate
+
+
+@app.patch("/crates/{crate_id}/status", response_model=CrateRead)
+def update_crate_status(
+    crate_id: int, update: CrateStatusUpdate, session: Session = Depends(get_session)
+):
+    crate = session.get(Crate, crate_id)
+    if not crate:
+        raise HTTPException(status_code=404, detail=f"Crate with id {crate_id} not found")
+    crate.status = update.status
+    session.add(crate)
+    session.commit()
+    session.refresh(crate)
+    return crate
+
+
+@app.delete("/crates/{crate_id}", status_code=204)
+def delete_crate(crate_id: int, session: Session = Depends(get_session)):
+    crate = session.get(Crate, crate_id)
+    if not crate:
+        raise HTTPException(status_code=404, detail=f"Crate with id {crate_id} not found")
+    session.delete(crate)
+
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Crate with id {crate_id} is still stocked")
+
 
 # ---------- Kegs ----------
 
@@ -120,21 +190,24 @@ def list_kegs(
     return session.exec(query).all()
 
 
-@app.post("/kegs", response_model=KegRead, status_code=201)
-def create_keg(keg: KegCreate, session: Session = Depends(get_session)):
-    db_keg = Keg.model_validate(keg)
-    session.add(db_keg)
-    session.commit()
-    session.refresh(db_keg)
-    return db_keg
-
-
 @app.get("/kegs/{keg_id}", response_model=KegRead)
 def get_keg(keg_id: int, session: Session = Depends(get_session)):
     keg = session.get(Keg, keg_id)
     if not keg:
         raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
     return keg
+
+
+@app.post("/kegs", response_model=KegRead, status_code=201)
+def create_keg(keg: KegCreate, session: Session = Depends(get_session)):
+    db_keg = Keg.model_validate(keg)
+    session.add(db_keg)
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Beverage with id {keg.beverage_id} does not exist")
+    session.refresh(db_keg)
+    return db_keg
 
 
 @app.patch("/kegs/{keg_id}/status", response_model=KegRead)
@@ -183,6 +256,19 @@ def list_deliveries(
     return [DeliveryRead(id=d.id, date=d.date, customer=d.customer, keg_ids=d.get_keg_ids()) for d in deliveries]
 
 
+@app.get("/deliveries/{delivery_id}", response_model=DeliveryRead)
+def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
+    delivery = session.get(Delivery, delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
+    return DeliveryRead(
+        id=delivery.id,
+        date=delivery.date,
+        customer=delivery.customer,
+        keg_ids=delivery.get_keg_ids(),
+    )
+
+
 @app.post("/deliveries", response_model=DeliveryRead, status_code=201)
 def create_delivery(
     delivery: DeliveryCreate, session: Session = Depends(get_session)
@@ -198,28 +284,6 @@ def create_delivery(
         customer=db_delivery.customer,
         keg_ids=db_delivery.get_keg_ids(),
     )
-
-
-@app.get("/deliveries/{delivery_id}", response_model=DeliveryRead)
-def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
-    delivery = session.get(Delivery, delivery_id)
-    if not delivery:
-        raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
-    return DeliveryRead(
-        id=delivery.id,
-        date=delivery.date,
-        customer=delivery.customer,
-        keg_ids=delivery.get_keg_ids(),
-    )
-
-
-@app.delete("/deliveries/{delivery_id}", status_code=204)
-def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
-    delivery = session.get(Delivery, delivery_id)
-    if not delivery:
-        raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
-    session.delete(delivery)
-    session.commit()
 
 
 @app.patch("/deliveries/{delivery_id}/metadata", response_model=DeliveryRead)
@@ -267,3 +331,13 @@ def update_delivery_payload(
         customer=delivery.customer,
         keg_ids=delivery.get_keg_ids(),
     )
+
+
+@app.delete("/deliveries/{delivery_id}", status_code=204)
+def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
+    delivery = session.get(Delivery, delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
+    session.delete(delivery)
+    session.commit()
+
