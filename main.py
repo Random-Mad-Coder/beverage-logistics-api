@@ -4,19 +4,23 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from database import create_db_and_tables, get_session
 from models import (
+    BeverageType,
     ContainerType,
     Status,
-    Variety,
-    InventoryReport,
+    Beverage,
+    BeverageCreate,
+    BeverageRead,
     Delivery,
     DeliveryCreate,
     DeliveryRead,
     DeliveryMetaDataUpdate,
     DeliveryPayloadUpdate,
+    InventoryReport,
     Keg,
     KegCreate,
     KegRead,
@@ -31,31 +35,76 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Fass-Logistik-API", lifespan=lifespan)
+app = FastAPI(title="Beverage Logistics API", lifespan=lifespan)
 
 # ---------- Inventory ----------
 
 @app.get("/inventory", response_model=list[InventoryReport])
 def get_inventory(reserve: int, session: Session = Depends(get_session)):
-    query = select(Keg.variety, func.count()).where(Keg.status == Status.FULL).group_by(Keg.variety).having(func.count() < reserve)
+    query = (
+        select(Beverage.id, Beverage.name, func.count())
+        .join(Beverage, Keg.beverage_id == Beverage.id)
+        .where(Keg.status == Status.FULL)
+        .group_by(Beverage.id, Beverage.name)
+        .having(func.count() < reserve)
+    )
     result = session.exec(query).all()
 
-    return [InventoryReport(variety=variety, container_type=ContainerType.KEG, count=count) for (variety, count) in result]
+    return [InventoryReport(beverage_id=beverage_id, beverage_name=beverage_name, container_type=ContainerType.KEG, count=count) for (beverage_id, beverage_name, count) in result]
 
+
+# ---------- Beverage ----------
+
+@app.get("/beverages", response_model=list[BeverageRead])
+def list_beverages(
+    name: Optional[str] = Query(default=None),
+    beverage_type: Optional[BeverageType] = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    query = select(Beverage)
+    if name:
+        query = query.where(Beverage.name == name)
+    if beverage_type:
+        query = query.where(Beverage.type == beverage_type)
+
+    return session.exec(query).all()
+
+
+@app.post("/beverages", response_model=BeverageRead, status_code=201)
+def create_beverage(beverage: BeverageCreate, session: Session = Depends(get_session)):
+    db_beverage = Beverage.model_validate(beverage)
+    session.add(db_beverage)
+
+    try:
+        session.commit()
+    except IntegrityError: 
+        raise HTTPException(status_code=409, detail=f"Beverage with name {db_beverage.name} already exists")
+
+    session.refresh(db_beverage)
+    return db_beverage
+
+
+@app.get("/beverages/{beverage_id}", response_model=BeverageRead)
+def get_beverage(beverage_id: int, session: Session = Depends(get_session)):
+    beverage = session.get(Beverage, beverage_id)
+    if not beverage:
+        raise HTTPException(status_code=404, detail=f"Beverage with id {beverage_id} not found")
+    return beverage
 
 # ---------- Kegs ----------
 
 @app.get("/kegs", response_model=list[KegRead])
 def list_kegs(
+    beverage_name: Optional[str] = Query(default=None),
     status: Optional[Status] = Query(default=None),
-    variety: Optional[Variety] = Query(default=None),
     session: Session = Depends(get_session),
 ):
     query = select(Keg)
+    if beverage_name:
+        query = query.join(Beverage, Keg.beverage_id == Beverage.id).where(Beverage.name == beverage_name)
     if status:
         query = query.where(Keg.status == status)
-    if variety:
-        query = query.where(Keg.variety == variety)
+
     return session.exec(query).all()
 
 

@@ -1,9 +1,4 @@
-"""Data model: Keg and Delivery.
-
-Kept deliberately minimal (minimal build):
-- Keg: id, size, variety, status
-- Delivery: id, date, customer, keg_ids (stored as a JSON string in SQLite,
-  exposed externally as a list of ints)
+"""
 """
 import json
 from datetime import date
@@ -22,18 +17,33 @@ class Status(str, Enum):
     IN_DELIVERY = "in_delivery"
     FULL = "full"
 
-class Variety(str, Enum):
-    IPA = "ipa"
-    STOUT = "stout"
-    PILSENER = "pilsener"
-    HELLES = "helles"
-    DUNKEL = "dunkel"
-    BOCK = "bock"
+# Consciously conflated water and lemonade into a soft_drink category
+# Could be changed if ever relevant to the domain in question
+class BeverageType(str, Enum):
+    BEER = "beer"
+    SOFT_DRINK = "soft_drink"
+
+# ---------- Beverage ----------
+
+class BeverageBase(SQLModel):
+    name: str
+    type: BeverageType
+
+class Beverage(BeverageBase, table=True):
+    name: str = Field(unique=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+class BeverageCreate(BeverageBase):
+    pass
+
+class BeverageRead(BeverageBase):
+    id: int
 
 # ---------- Inventory ----------
 
 class InventoryReport(SQLModel):
-    variety: Variety
+    beverage_id: int
+    beverage_name: str
     container_type: ContainerType
     count: int
 
@@ -41,11 +51,12 @@ class InventoryReport(SQLModel):
 
 class KegBase(SQLModel):
     size: str  # "20l", "30l", "50l"
-    variety: Variety
+    beverage_id: int
     status: Status = Status.EMPTY
 
 class Keg(KegBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    beverage_id: int = Field(foreign_key="beverage.id")
 
 class KegCreate(KegBase):
     pass
