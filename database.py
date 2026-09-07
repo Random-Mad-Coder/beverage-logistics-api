@@ -1,14 +1,12 @@
 from sqlmodel import SQLModel, Session, create_engine
+from sqlalchemy import event
 
-# A single file is enough - no DB server needed for the minimal build.
-DATABASE_URL = "sqlite:///./fass_logistik.db"
-
-# check_same_thread=False is standard for SQLite + FastAPI,
-# because FastAPI can process requests across threads.
-engine = create_engine(
-    DATABASE_URL, echo=True, connect_args={"check_same_thread": False}
-)
-
+def enable_foreign_keys(engine):
+    @event.listens_for(engine, "connect")
+    def listener_connect(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
@@ -17,3 +15,14 @@ def create_db_and_tables() -> None:
 def get_session():
     with Session(engine) as session:
         yield session
+
+# A single file is enough - no DB server needed for the minimal build.
+DATABASE_URL = "sqlite:///./beverage_logistics.db"
+
+# check_same_thread=False is standard for SQLite + FastAPI,
+# because FastAPI can process requests across threads.
+engine = create_engine(
+    DATABASE_URL, echo=True, connect_args={"check_same_thread": False}
+)
+
+enable_foreign_keys(engine)

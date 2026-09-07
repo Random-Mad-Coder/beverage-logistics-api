@@ -91,6 +91,18 @@ def get_beverage(beverage_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail=f"Beverage with id {beverage_id} not found")
     return beverage
 
+@app.delete("/beverages/{beverage_id}", status_code=204)
+def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
+    beverage = session.get(Beverage, beverage_id)
+    if not beverage:
+        raise HTTPException(status_code=404, detail=f"Beverage with id {beverage_id} not found")
+    session.delete(beverage)
+
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Beverage with id {beverage_id} is still stocked")
+
 # ---------- Kegs ----------
 
 @app.get("/kegs", response_model=list[KegRead])
@@ -145,7 +157,11 @@ def delete_keg(keg_id: int, session: Session = Depends(get_session)):
     if not keg:
         raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
     session.delete(keg)
-    session.commit()
+
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Keg with id {keg_id} is still stocked")
 
 
 # ---------- Deliveries ----------
