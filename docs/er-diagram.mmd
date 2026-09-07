@@ -1,6 +1,10 @@
 erDiagram
     BEVERAGE ||--o{ KEG : "filled into"
     BEVERAGE ||--o{ CRATE : "filled into"
+    BEVERAGE ||--o{ PALLET : "ordered as"
+    GOODS_RECEIPT ||--o{ PALLET : contains
+    PALLET ||--o{ KEG : "unpacked into"
+    PALLET ||--o{ CRATE : "unpacked into"
     DELIVERY ||--o{ DELIVERY_KEG : contains
     KEG ||--o{ DELIVERY_KEG : "included in"
     DELIVERY ||--o{ DELIVERY_CRATE : contains
@@ -16,12 +20,29 @@ erDiagram
         string size
         string status
         int beverage_id FK
+        date best_before_date
+        int received_via_pallet_id FK
     }
     CRATE {
         int id PK
         string container_type
         string status
         int beverage_id FK
+        date best_before_date
+        int received_via_pallet_id FK
+    }
+    GOODS_RECEIPT {
+        int id PK
+        date date
+        string supplier
+    }
+    PALLET {
+        int id PK
+        int goods_receipt_id FK
+        int beverage_id FK
+        string container_type
+        int quantity
+        date best_before_date
     }
     DELIVERY {
         int id PK
