@@ -9,7 +9,9 @@ from sqlmodel import SQLModel, Field
 # ---------- General Business Logic ----------
 
 class ContainerType(str, Enum):
-    KEG = "keg"
+    KEG_20L = "keg_20l"
+    KEG_30L = "keg_30l"
+    KEG_50L = "keg_50l"
     CRATE_20X05L = "crate_20x05l"
     CRATE_24X033L = "crate_24x033l"
 
@@ -40,26 +42,6 @@ class BeverageCreate(BeverageBase):
 
 class BeverageRead(BeverageBase):
     id: int
-
-# ---------- Crate ----------
-
-class CrateBase(SQLModel):
-    container_type: ContainerType
-    beverage_id: int
-    status: Status = Status.EMPTY
-
-class Crate(CrateBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    beverage_id: int = Field(foreign_key="beverage.id")
-
-class CrateCreate(CrateBase):
-    pass
-
-class CrateRead(CrateBase):
-    id: int
-
-class CrateStatusUpdate(SQLModel):
-    status: Status
 
 # ---------- Delivery ----------
 
@@ -124,24 +106,27 @@ class InventoryReport(SQLModel):
     container_type: ContainerType
     count: int
 
-# ---------- Keg ----------
+# ---------- PackagingUnit ----------
 
-class KegBase(SQLModel):
-    size: str  # "20l", "30l", "50l"
+class PackagingUnitBase(SQLModel):
+    container_type: ContainerType
     beverage_id: int
     status: Status = Status.EMPTY
+    best_before_date: date
+    received_via_pallet_id: Optional[int] = None
 
-class Keg(KegBase, table=True):
+class PackagingUnit(PackagingUnitBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     beverage_id: int = Field(foreign_key="beverage.id")
+    received_via_pallet_id: Optional[int] = Field(default=None, foreign_key="pallet.id")
 
-class KegCreate(KegBase):
+class PackagingUnitCreate(PackagingUnitBase):
     pass
 
-class KegRead(KegBase):
+class PackagingUnitRead(PackagingUnitBase):
     id: int
 
-class KegStatusUpdate(SQLModel):
+class PackagingUnitUpdate(SQLModel):
     status: Status
 
 # ---------- Pallet ----------
