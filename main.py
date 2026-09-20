@@ -27,6 +27,7 @@ from models import (
     GoodsReceipt,
     GoodsReceiptCreate,
     GoodsReceiptRead,
+    GoodsReceiptUpdate,
     InventoryReport,
     Keg,
     KegCreate,
@@ -35,6 +36,7 @@ from models import (
     Pallet,
     PalletCreate,
     PalletRead,
+    PalletUpdate
 )
 
 
@@ -115,7 +117,7 @@ def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=409, detail=f"Beverage with id {beverage_id} is still stocked")
 
 
-# ---------- Crates ----------
+# ---------- Crate ----------
 
 @app.get("/crates", response_model=list[CrateRead])
 def list_crates(
@@ -179,7 +181,7 @@ def delete_crate(crate_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=409, detail=f"Crate with id {crate_id} is still stocked")
 
 
-# ---------- Deliveries ----------
+# ---------- Delivery ----------
 
 @app.get("/deliveries", response_model=list[DeliveryRead])
 def list_deliveries(
@@ -321,7 +323,39 @@ def create_goods_receipt(goods_receipt: GoodsReceiptCreate, session: Session = D
     return db_goods_receipt
 
 
-# ---------- Kegs ----------
+@app.patch("/goods-receipts/{goods_receipt_id}", response_model=GoodsReceiptRead)
+def update_goods_receipt(
+    goods_receipt_id: int, update: GoodsReceiptUpdate, session: Session = Depends(get_session)
+):
+    db_receipt = session.get(GoodsReceipt, goods_receipt_id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail=f"Goods receipt with id {goods_receipt_id} not found")
+
+    # return only set values as a dict
+    changes = update.model_dump(exclude_none=True)
+    for field, value in changes.items():
+        setattr(db_receipt, field, value)
+
+    session.add(db_receipt)
+    session.commit()
+    session.refresh(db_receipt)
+    return db_receipt
+
+
+@app.delete("/goods-receipts/{goods_receipt_id}", status_code=204)
+def delete_goods_receipt(goods_receipt_id: int, session: Session = Depends(get_session)):
+    goods_receipt = session.get(GoodsReceipt, goods_receipt_id)
+    if not goods_receipt:
+        raise HTTPException(status_code=404, detail=f"Goods receipt with id {goods_receipt_id} not found")
+    session.delete(goods_receipt)
+
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Goods receipt with id {goods_receipt_id} still has pallets referencing it")
+
+
+# ---------- Keg ----------
 
 @app.get("/kegs", response_model=list[KegRead])
 def list_kegs(
@@ -424,6 +458,41 @@ def create_pallet(pallet: PalletCreate, session: Session = Depends(get_session))
     try:
         session.commit()
     except IntegrityError:
-        raise HTTPException(status_code=409, detail=f"Beverage {db_pallet.beverage_id} or goods receipt {db_pallet.goods_receipt_id} does not exist")
+        raise HTTPException(status_code=409, detail=f"Beverage with id {db_pallet.beverage_id} or goods receipt with id {db_pallet.goods_receipt_id} does not exist")
     session.refresh(db_pallet)
     return db_pallet
+
+
+@app.patch("/pallets/{pallet_id}", response_model=PalletRead)
+def update_pallet(
+    pallet_id: int, update: PalletUpdate, session: Session = Depends(get_session)
+):
+    db_pallet = session.get(Pallet, pallet_id)
+    if not db_pallet:
+        raise HTTPException(status_code=404, detail=f"Pallet with id {pallet_id} not found")
+
+    # return only set values as a dict
+    changes = update.model_dump(exclude_none=True)
+    for field, value in changes.items():
+        setattr(db_pallet, field, value)
+
+    session.add(db_pallet)
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Beverage with id {db_pallet.beverage_id} does not exist")
+    session.refresh(db_pallet)
+    return db_pallet
+
+
+@app.delete("/pallets/{pallet_id}", status_code=204)
+def delete_pallet(pallet_id: int, session: Session = Depends(get_session)):
+    pallet = session.get(Pallet, pallet_id)
+    if not pallet:
+        raise HTTPException(status_code=404, detail=f"Pallet with id {pallet_id} not found")
+    session.delete(pallet)
+
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Pallet with id {pallet_id} still has unpacked kegs/crates referencing it")

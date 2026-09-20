@@ -111,6 +111,11 @@ class GoodsReceiptRead(GoodsReceiptBase):
     id: int
     actual_pallet_count: int
 
+class GoodsReceiptUpdate(SQLModel):
+    date: Optional[date] = None
+    supplier: Optional[str] = None
+    expected_pallet_count: Optional[int] = None
+
 # ---------- Inventory ----------
 
 class InventoryReport(SQLModel):
@@ -158,3 +163,9 @@ class PalletCreate(PalletBase):
 
 class PalletRead(PalletBase):
     id: int
+
+class PalletUpdate(SQLModel):
+    container_type: Optional[ContainerType] = None
+    beverage_id: Optional[int] = None
+    quantity: Optional[int] = None
+    best_before_date: Optional[date] = None
