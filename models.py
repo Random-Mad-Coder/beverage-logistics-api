@@ -41,14 +41,6 @@ class BeverageCreate(BeverageBase):
 class BeverageRead(BeverageBase):
     id: int
 
-# ---------- Inventory ----------
-
-class InventoryReport(SQLModel):
-    beverage_id: int
-    beverage_name: str
-    container_type: ContainerType
-    count: int
-
 # ---------- Crate ----------
 
 class CrateBase(SQLModel):
@@ -67,26 +59,6 @@ class CrateRead(CrateBase):
     id: int
 
 class CrateStatusUpdate(SQLModel):
-    status: Status
-
-# ---------- Keg ----------
-
-class KegBase(SQLModel):
-    size: str  # "20l", "30l", "50l"
-    beverage_id: int
-    status: Status = Status.EMPTY
-
-class Keg(KegBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    beverage_id: int = Field(foreign_key="beverage.id")
-
-class KegCreate(KegBase):
-    pass
-
-class KegRead(KegBase):
-    id: int
-
-class KegStatusUpdate(SQLModel):
     status: Status
 
 # ---------- Delivery ----------
@@ -120,3 +92,69 @@ class DeliveryMetaDataUpdate(SQLModel):
 
 class DeliveryPayloadUpdate(SQLModel):
     keg_ids: list[int]
+
+# ---------- GoodsReceipt ----------
+
+class GoodsReceiptBase(SQLModel):
+    date: date
+    supplier: str
+    expected_pallet_count: Optional[int] = None
+
+class GoodsReceipt(GoodsReceiptBase, table=True):
+    __tablename__ = "goods_receipt"
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+class GoodsReceiptCreate(GoodsReceiptBase):
+    pass
+
+class GoodsReceiptRead(GoodsReceiptBase):
+    id: int
+    actual_pallet_count: int
+
+# ---------- Inventory ----------
+
+class InventoryReport(SQLModel):
+    beverage_id: int
+    beverage_name: str
+    container_type: ContainerType
+    count: int
+
+# ---------- Keg ----------
+
+class KegBase(SQLModel):
+    size: str  # "20l", "30l", "50l"
+    beverage_id: int
+    status: Status = Status.EMPTY
+
+class Keg(KegBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    beverage_id: int = Field(foreign_key="beverage.id")
+
+class KegCreate(KegBase):
+    pass
+
+class KegRead(KegBase):
+    id: int
+
+class KegStatusUpdate(SQLModel):
+    status: Status
+
+# ---------- Pallet ----------
+
+class PalletBase(SQLModel):
+    container_type: ContainerType
+    beverage_id: int
+    goods_receipt_id: int
+    quantity: int
+    best_before_date: date
+
+class Pallet(PalletBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    beverage_id: int = Field(foreign_key="beverage.id")
+    goods_receipt_id: int = Field(foreign_key="goods_receipt.id")
+
+class PalletCreate(PalletBase):
+    pass
+
+class PalletRead(PalletBase):
+    id: int

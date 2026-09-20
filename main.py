@@ -24,11 +24,17 @@ from models import (
     DeliveryRead,
     DeliveryMetaDataUpdate,
     DeliveryPayloadUpdate,
+    GoodsReceipt,
+    GoodsReceiptCreate,
+    GoodsReceiptRead,
     InventoryReport,
     Keg,
     KegCreate,
     KegRead,
-    KegStatusUpdate
+    KegStatusUpdate,
+    Pallet,
+    PalletCreate,
+    PalletRead,
 )
 
 
@@ -63,7 +69,7 @@ def get_inventory(reserve: int, session: Session = Depends(get_session)):
 def list_beverages(
     name: Optional[str] = Query(default=None),
     beverage_type: Optional[BeverageType] = Query(default=None),
-    session: Session = Depends(get_session),
+    session: Session = Depends(get_session)
 ):
     query = select(Beverage)
     if name:
@@ -115,7 +121,7 @@ def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
 def list_crates(
     beverage_name: Optional[str] = Query(default=None),
     status: Optional[Status] = Query(default=None),
-    session: Session = Depends(get_session),
+    session: Session = Depends(get_session)
 ):
     query = select(Crate)
     if beverage_name:
@@ -171,70 +177,6 @@ def delete_crate(crate_id: int, session: Session = Depends(get_session)):
         session.commit()
     except IntegrityError:
         raise HTTPException(status_code=409, detail=f"Crate with id {crate_id} is still stocked")
-
-
-# ---------- Kegs ----------
-
-@app.get("/kegs", response_model=list[KegRead])
-def list_kegs(
-    beverage_name: Optional[str] = Query(default=None),
-    status: Optional[Status] = Query(default=None),
-    session: Session = Depends(get_session),
-):
-    query = select(Keg)
-    if beverage_name:
-        query = query.join(Beverage, Keg.beverage_id == Beverage.id).where(Beverage.name == beverage_name)
-    if status:
-        query = query.where(Keg.status == status)
-
-    return session.exec(query).all()
-
-
-@app.get("/kegs/{keg_id}", response_model=KegRead)
-def get_keg(keg_id: int, session: Session = Depends(get_session)):
-    keg = session.get(Keg, keg_id)
-    if not keg:
-        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
-    return keg
-
-
-@app.post("/kegs", response_model=KegRead, status_code=201)
-def create_keg(keg: KegCreate, session: Session = Depends(get_session)):
-    db_keg = Keg.model_validate(keg)
-    session.add(db_keg)
-    try:
-        session.commit()
-    except IntegrityError:
-        raise HTTPException(status_code=409, detail=f"Beverage with id {keg.beverage_id} does not exist")
-    session.refresh(db_keg)
-    return db_keg
-
-
-@app.patch("/kegs/{keg_id}/status", response_model=KegRead)
-def update_keg_status(
-    keg_id: int, update: KegStatusUpdate, session: Session = Depends(get_session)
-):
-    keg = session.get(Keg, keg_id)
-    if not keg:
-        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
-    keg.status = update.status
-    session.add(keg)
-    session.commit()
-    session.refresh(keg)
-    return keg
-
-
-@app.delete("/kegs/{keg_id}", status_code=204)
-def delete_keg(keg_id: int, session: Session = Depends(get_session)):
-    keg = session.get(Keg, keg_id)
-    if not keg:
-        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
-    session.delete(keg)
-
-    try:
-        session.commit()
-    except IntegrityError:
-        raise HTTPException(status_code=409, detail=f"Keg with id {keg_id} is still stocked")
 
 
 # ---------- Deliveries ----------
@@ -341,3 +283,147 @@ def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
     session.delete(delivery)
     session.commit()
 
+
+# ---------- GoodsReceipt ----------
+
+@app.get("/goods-receipts", response_model=list[GoodsReceiptRead])
+def list_goods_receipt(
+    date: Optional[date] = Query(default=None),
+    supplier: Optional[str] = Query(default=None),
+    session: Session = Depends(get_session)
+):
+    query = select(GoodsReceipt)
+    if date:
+        query = query.where(GoodsReceipt.date == date)
+    if supplier:
+        query = query.where(GoodsReceipt.supplier == supplier)
+
+    return session.exec(query).all()
+
+
+@app.get("/goods-receipts/{goods_receipt_id}", response_model=GoodsReceiptRead)
+def get_goods_receipt(goods_receipt_id: int, session: Session = Depends(get_session)):
+    goods_receipt = session.get(GoodsReceipt, goods_receipt_id)
+    if not goods_receipt:
+        raise HTTPException(status_code=404, detail=f"Goods receipt with id {goods_receipt_id} not found")
+
+    query = select(func.count()).where(Pallet.goods_receipt_id == goods_receipt_id)
+    actual_pallet_count = session.exec(query).one()
+    return GoodsReceiptRead.model_validate(goods_receipt, update={"actual_pallet_count": actual_pallet_count})
+
+
+@app.post("/goods-receipts", response_model=GoodsReceiptRead, status_code=201)
+def create_goods_receipt(goods_receipt: GoodsReceiptCreate, session: Session = Depends(get_session)):
+    db_goods_receipt = GoodsReceipt.model_validate(goods_receipt)
+    session.add(db_goods_receipt)
+    session.commit()
+    session.refresh(db_goods_receipt)
+    return db_goods_receipt
+
+
+# ---------- Kegs ----------
+
+@app.get("/kegs", response_model=list[KegRead])
+def list_kegs(
+    beverage_name: Optional[str] = Query(default=None),
+    status: Optional[Status] = Query(default=None),
+    session: Session = Depends(get_session)
+):
+    query = select(Keg)
+    if beverage_name:
+        query = query.join(Beverage, Keg.beverage_id == Beverage.id).where(Beverage.name == beverage_name)
+    if status:
+        query = query.where(Keg.status == status)
+
+    return session.exec(query).all()
+
+
+@app.get("/kegs/{keg_id}", response_model=KegRead)
+def get_keg(keg_id: int, session: Session = Depends(get_session)):
+    keg = session.get(Keg, keg_id)
+    if not keg:
+        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
+    return keg
+
+
+@app.post("/kegs", response_model=KegRead, status_code=201)
+def create_keg(keg: KegCreate, session: Session = Depends(get_session)):
+    db_keg = Keg.model_validate(keg)
+    session.add(db_keg)
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Beverage with id {keg.beverage_id} does not exist")
+    session.refresh(db_keg)
+    return db_keg
+
+
+@app.patch("/kegs/{keg_id}/status", response_model=KegRead)
+def update_keg_status(
+    keg_id: int, update: KegStatusUpdate, session: Session = Depends(get_session)
+):
+    keg = session.get(Keg, keg_id)
+    if not keg:
+        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
+    keg.status = update.status
+    session.add(keg)
+    session.commit()
+    session.refresh(keg)
+    return keg
+
+
+@app.delete("/kegs/{keg_id}", status_code=204)
+def delete_keg(keg_id: int, session: Session = Depends(get_session)):
+    keg = session.get(Keg, keg_id)
+    if not keg:
+        raise HTTPException(status_code=404, detail=f"Keg with id {keg_id} not found")
+    session.delete(keg)
+
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Keg with id {keg_id} is still stocked")
+
+
+# ---------- Pallet ----------
+
+@app.get("/pallets", response_model=list[PalletRead])
+def list_pallets(
+    best_before: Optional[date] = Query(default=None),
+    beverage_id: Optional[int] = Query(default=None),
+    container_type: Optional[ContainerType] = Query(default=None),
+    goods_receipt_id: Optional[int] = Query(default=None),
+    session: Session = Depends(get_session)
+):
+    query = select(Pallet)
+    if best_before:
+        query = query.where(Pallet.best_before_date == best_before)
+    if beverage_id:
+        query = query.where(Pallet.beverage_id == beverage_id)
+    if container_type:
+        query = query.where(Pallet.container_type == container_type)
+    if goods_receipt_id:
+        query = query.where(Pallet.goods_receipt_id == goods_receipt_id)
+
+    return session.exec(query).all()
+
+
+@app.get("/pallets/{pallet_id}", response_model=PalletRead)
+def get_pallet(pallet_id: int, session: Session = Depends(get_session)):
+    pallet = session.get(Pallet, pallet_id)
+    if not pallet:
+        raise HTTPException(status_code=404, detail=f"Pallet with id {pallet_id} not found")
+
+    return PalletRead.model_validate(pallet)
+
+
+@app.post("/pallets", response_model=PalletRead, status_code=201)
+def create_pallet(pallet: PalletCreate, session: Session = Depends(get_session)):
+    db_pallet = Pallet.model_validate(pallet)
+    session.add(db_pallet)
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Beverage {db_pallet.beverage_id} or goods receipt {db_pallet.goods_receipt_id} does not exist")
+    session.refresh(db_pallet)
+    return db_pallet
