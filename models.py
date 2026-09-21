@@ -111,7 +111,7 @@ class InventoryReport(SQLModel):
 class PackagingUnitBase(SQLModel):
     container_type: ContainerType
     beverage_id: int
-    status: Status = Status.EMPTY
+    status: Status = Status.FULL
     best_before_date: date
     received_via_pallet_id: Optional[int] = None
 

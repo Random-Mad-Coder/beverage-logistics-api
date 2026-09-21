@@ -399,6 +399,60 @@ def create_pallet(pallet: PalletCreate, session: Session = Depends(get_session))
     return db_pallet
 
 
+def unpack(pallet: Pallet, session: Session) -> list[PackagingUnit]:
+    item_list = [        
+        PackagingUnit(
+            container_type=pallet.container_type,
+            beverage_id=pallet.beverage_id,
+            best_before_date=pallet.best_before_date,
+            received_via_pallet_id=pallet.id
+        ) for _ in range(pallet.quantity)
+        ]
+    session.add_all(item_list)
+    session.commit()
+
+    for item in item_list:
+        session.refresh(item)
+
+    return item_list
+
+
+@app.post("/pallets/{pallet_id}/unpack", response_model=list[PackagingUnitRead])
+def unpack_pallet(pallet_id: int, session: Session = Depends(get_session)):
+    pallet = session.get(Pallet, pallet_id)
+    if not pallet:
+        raise HTTPException(status_code=404, detail=f"Pallet with id {pallet_id} not found")
+
+    query = select(PackagingUnit).where(PackagingUnit.received_via_pallet_id == pallet_id)
+    result = session.exec(query).all()
+
+    if not result:
+        return unpack(pallet, session)
+
+    count = len(result)
+    sample = result[0]
+
+    if (
+        sample.beverage_id == pallet.beverage_id 
+        and sample.container_type == pallet.container_type 
+        and sample.best_before_date == pallet.best_before_date
+        and count == pallet.quantity
+    ):
+        raise HTTPException(status_code=409, detail=f"Pallet with id {pallet_id} is already unpacked with unchanged data")
+
+    for item in result:
+        if item.status == Status.IN_DELIVERY:
+            raise HTTPException(status_code=409, detail=f"Packaging unit with id {item.id} is still part of a delivery")
+        session.delete(item)
+
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="Error deleting existing packaging units")
+
+    return unpack(pallet, session)
+
+
 @app.patch("/pallets/{pallet_id}", response_model=PalletRead)
 def update_pallet(
     pallet_id: int, update: PalletUpdate, session: Session = Depends(get_session)
