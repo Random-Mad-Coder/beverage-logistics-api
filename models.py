@@ -18,7 +18,6 @@ class ContainerType(str, Enum):
 class Status(str, Enum):
     EMPTY = "empty"
     CLEANED = "cleaned"
-    IN_DELIVERY = "in_delivery"
     FULL = "full"
 
 # Consciously conflated water and lemonade into a soft_drink category
@@ -51,29 +50,24 @@ class DeliveryBase(SQLModel):
 
 class Delivery(DeliveryBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    # SQLite cannot store lists -> stored as JSON text.
-    # Externally (API) clients just see a normal list of ints.
-    keg_ids_json: str = "[]"
-
-    def get_keg_ids(self) -> list[int]:
-        return json.loads(self.keg_ids_json)
-
-    def set_keg_ids(self, keg_ids: list[int]) -> None:
-        self.keg_ids_json = json.dumps(keg_ids)
 
 class DeliveryCreate(DeliveryBase):
-    keg_ids: list[int] = []
+    unit_ids: list[int] = []
 
 class DeliveryRead(DeliveryBase):
     id: int
-    keg_ids: list[int]
+    unit_ids: list[int]
 
 class DeliveryMetaDataUpdate(SQLModel):
     date: Optional[date] = None
     customer: Optional[str] = None
 
 class DeliveryPayloadUpdate(SQLModel):
-    keg_ids: list[int]
+    unit_ids: list[int]
+
+class DeliveryItem(SQLModel, table=True):
+    delivery_id: int = Field(primary_key=True, foreign_key="delivery.id")
+    unit_id: int = Field(primary_key=True, foreign_key="packaging_unit.id")
 
 # ---------- GoodsReceipt ----------
 
@@ -116,6 +110,7 @@ class PackagingUnitBase(SQLModel):
     received_via_pallet_id: Optional[int] = None
 
 class PackagingUnit(PackagingUnitBase, table=True):
+    __tablename__ = "packaging_unit"
     id: Optional[int] = Field(default=None, primary_key=True)
     beverage_id: int = Field(foreign_key="beverage.id")
     received_via_pallet_id: Optional[int] = Field(default=None, foreign_key="pallet.id")

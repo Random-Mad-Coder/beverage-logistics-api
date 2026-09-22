@@ -1,3 +1,4 @@
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Optional
@@ -20,6 +21,7 @@ from models import (
     DeliveryRead,
     DeliveryMetaDataUpdate,
     DeliveryPayloadUpdate,
+    DeliveryItem,
     GoodsReceipt,
     GoodsReceiptCreate,
     GoodsReceiptRead,
@@ -129,7 +131,15 @@ def list_deliveries(
 
     deliveries = session.exec(query).all()
 
-    return [DeliveryRead(id=d.id, date=d.date, customer=d.customer, keg_ids=d.get_keg_ids()) for d in deliveries]
+    delivery_ids = [d.id for d in deliveries]
+    query = select(DeliveryItem).where(DeliveryItem.delivery_id.in_(delivery_ids))
+    delivery_items = session.exec(query).all()
+
+    unit_ids_by_delivery = defaultdict(list)
+    for item in delivery_items:
+        unit_ids_by_delivery[item.delivery_id].append(item.unit_id)
+
+    return [DeliveryRead(id=d.id, date=d.date, customer=d.customer, unit_ids=unit_ids_by_delivery[d.id]) for d in deliveries]
 
 
 @app.get("/deliveries/{delivery_id}", response_model=DeliveryRead)
@@ -137,11 +147,15 @@ def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
     delivery = session.get(Delivery, delivery_id)
     if not delivery:
         raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
+
+    query = select(DeliveryItem.unit_id).where(DeliveryItem.delivery_id == delivery_id)
+    unit_ids = session.exec(query).all()
+
     return DeliveryRead(
         id=delivery.id,
         date=delivery.date,
         customer=delivery.customer,
-        keg_ids=delivery.get_keg_ids(),
+        unit_ids=unit_ids,
     )
 
 
@@ -149,16 +163,26 @@ def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
 def create_delivery(
     delivery: DeliveryCreate, session: Session = Depends(get_session)
 ):
-    db_delivery = Delivery(date=delivery.date, customer=delivery.customer)
-    db_delivery.set_keg_ids(delivery.keg_ids)
+    db_delivery = Delivery.model_validate(delivery)
+    query = select(PackagingUnit.id).where(PackagingUnit.id.in_(delivery.unit_ids))
+    existing_unit_ids = session.exec(query).all()
+    nonexistent_unit_ids = set(delivery.unit_ids) - set(existing_unit_ids)
+    if nonexistent_unit_ids:
+        raise HTTPException(status_code=409, detail=f"Inexistent packaging unit ids: {sorted(nonexistent_unit_ids)}")
+    
     session.add(db_delivery)
-    session.commit()
-    session.refresh(db_delivery)
+    session.flush()
+    session.add_all([DeliveryItem(delivery_id=db_delivery.id, unit_id=unit_id) for unit_id in delivery.unit_ids])
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
+    
     return DeliveryRead(
-        id=db_delivery.id,
         date=db_delivery.date,
         customer=db_delivery.customer,
-        keg_ids=db_delivery.get_keg_ids(),
+        id=db_delivery.id,
+        unit_ids=delivery.unit_ids
     )
 
 
@@ -180,11 +204,14 @@ def update_delivery_metadata(
     session.commit()
     session.refresh(delivery)
 
+    query = select(DeliveryItem.unit_id).where(DeliveryItem.delivery_id == delivery_id)
+    unit_ids = session.exec(query).all()
+
     return DeliveryRead(
-        id=delivery.id,
         date=delivery.date,
         customer=delivery.customer,
-        keg_ids=delivery.get_keg_ids(),
+        id=delivery.id,
+        unit_ids=unit_ids
     )
 
 @app.patch("/deliveries/{delivery_id}/payload", response_model=DeliveryRead)
@@ -195,17 +222,33 @@ def update_delivery_payload(
     if not delivery:
         raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
 
-    delivery.set_keg_ids(update.keg_ids)
+    query = select(DeliveryItem.unit_id).where(DeliveryItem.delivery_id == delivery_id)
+    delivery_unit_ids = session.exec(query).all()
 
-    session.add(delivery)
-    session.commit()
-    session.refresh(delivery)
+    create_unit_ids = set(update.unit_ids) - set(delivery_unit_ids)
+    query = select(PackagingUnit.id).where(PackagingUnit.id.in_(create_unit_ids))
+    existing_new_unit_ids = session.exec(query).all()
+    nonexistent_new_unit_ids = set(create_unit_ids) - set(existing_new_unit_ids)
+    if nonexistent_new_unit_ids:
+        raise HTTPException(status_code=409, detail=f"Inexistent packaging unit ids: {sorted(nonexistent_new_unit_ids)}")
+    session.add_all([DeliveryItem(delivery_id=delivery_id, unit_id=id) for id in create_unit_ids])
+
+    delete_unit_ids = set(delivery_unit_ids) - set(update.unit_ids)
+    query = select(DeliveryItem).where(DeliveryItem.unit_id.in_(delete_unit_ids), DeliveryItem.delivery_id == delivery_id)
+    delete_items = session.exec(query).all()
+    for item in delete_items:
+        session.delete(item)
+    
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
 
     return DeliveryRead(
-        id=delivery.id,
         date=delivery.date,
         customer=delivery.customer,
-        keg_ids=delivery.get_keg_ids(),
+        id=delivery.id,
+        unit_ids=update.unit_ids
     )
 
 
@@ -214,8 +257,17 @@ def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
     delivery = session.get(Delivery, delivery_id)
     if not delivery:
         raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
+
+    query = select(DeliveryItem).where(DeliveryItem.delivery_id == delivery_id)
+    delete_items = session.exec(query).all()
+    for item in delete_items:
+        session.delete(item)
     session.delete(delivery)
-    session.commit()
+
+    try:
+        session.commit()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
 
 
 # ---------- GoodsReceipt ----------
@@ -424,13 +476,13 @@ def unpack_pallet(pallet_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail=f"Pallet with id {pallet_id} not found")
 
     query = select(PackagingUnit).where(PackagingUnit.received_via_pallet_id == pallet_id)
-    result = session.exec(query).all()
+    units = session.exec(query).all()
 
-    if not result:
+    if not units:
         return unpack(pallet, session)
 
-    count = len(result)
-    sample = result[0]
+    count = len(units)
+    sample = units[0]
 
     if (
         sample.beverage_id == pallet.beverage_id 
@@ -440,9 +492,14 @@ def unpack_pallet(pallet_id: int, session: Session = Depends(get_session)):
     ):
         raise HTTPException(status_code=409, detail=f"Pallet with id {pallet_id} is already unpacked with unchanged data")
 
-    for item in result:
-        if item.status == Status.IN_DELIVERY:
-            raise HTTPException(status_code=409, detail=f"Packaging unit with id {item.id} is still part of a delivery")
+    pallet_unit_ids = [item.id for item in units]
+    query = select(DeliveryItem).where(DeliveryItem.unit_id.in_(pallet_unit_ids))
+    delivery_units = session.exec(query).all()
+
+    if delivery_units:
+        raise HTTPException(status_code=409, detail=f"Packaging units with ids {sorted([item.unit_id for item in delivery_units])} are still part of a delivery")
+
+    for item in units:
         session.delete(item)
 
     try:
