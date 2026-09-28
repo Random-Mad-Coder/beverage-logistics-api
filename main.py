@@ -95,7 +95,8 @@ def create_beverage(beverage: BeverageCreate, session: Session = Depends(get_ses
 
     try:
         session.commit()
-    except IntegrityError: 
+    except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail=f"Beverage with name {db_beverage.name} already exists")
 
     session.refresh(db_beverage)
@@ -112,6 +113,7 @@ def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
     try:
         session.commit()
     except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail=f"Beverage with id {beverage_id} is still stocked")
 
 
@@ -182,6 +184,7 @@ def create_delivery(
     try:
         session.commit()
     except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
     
     return DeliveryRead(
@@ -254,6 +257,7 @@ def update_delivery_payload(
     try:
         session.commit()
     except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
 
     return DeliveryRead(
@@ -279,10 +283,16 @@ def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
     try:
         session.commit()
     except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
 
 
 # ---------- GoodsReceipt ----------
+
+def count_pallets(goods_receipt_id: int, session: Session) -> int:
+    query = select(func.count()).where(Pallet.goods_receipt_id == goods_receipt_id)
+    return session.exec(query).one()
+
 
 @app.get("/goods-receipts", response_model=list[GoodsReceiptRead])
 def list_goods_receipt(
@@ -305,9 +315,7 @@ def get_goods_receipt(goods_receipt_id: int, session: Session = Depends(get_sess
     if not goods_receipt:
         raise HTTPException(status_code=404, detail=f"Goods receipt with id {goods_receipt_id} not found")
 
-    query = select(func.count()).where(Pallet.goods_receipt_id == goods_receipt_id)
-    actual_pallet_count = session.exec(query).one()
-    return GoodsReceiptRead.model_validate(goods_receipt, update={"actual_pallet_count": actual_pallet_count})
+    return GoodsReceiptRead.model_validate(goods_receipt, update={"actual_pallet_count": count_pallets(goods_receipt_id, session)})
 
 
 @app.post("/goods-receipts", response_model=GoodsReceiptRead, status_code=201)
@@ -316,7 +324,8 @@ def create_goods_receipt(goods_receipt: GoodsReceiptCreate, session: Session = D
     session.add(db_goods_receipt)
     session.commit()
     session.refresh(db_goods_receipt)
-    return db_goods_receipt
+    # A freshly created goods receipt cannot have any pallets yet
+    return GoodsReceiptRead.model_validate(db_goods_receipt, update={"actual_pallet_count": 0})
 
 
 @app.patch("/goods-receipts/{goods_receipt_id}", response_model=GoodsReceiptRead)
@@ -335,7 +344,7 @@ def update_goods_receipt(
     session.add(db_receipt)
     session.commit()
     session.refresh(db_receipt)
-    return db_receipt
+    return GoodsReceiptRead.model_validate(db_receipt, update={"actual_pallet_count": count_pallets(goods_receipt_id, session)})
 
 
 @app.delete("/goods-receipts/{goods_receipt_id}", status_code=204)
@@ -348,6 +357,7 @@ def delete_goods_receipt(goods_receipt_id: int, session: Session = Depends(get_s
     try:
         session.commit()
     except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail=f"Goods receipt with id {goods_receipt_id} still has pallets referencing it")
 
 
@@ -386,7 +396,8 @@ def create_packaging_unit(unit: PackagingUnitCreate, session: Session = Depends(
     try:
         session.commit()
     except IntegrityError:
-        raise HTTPException(status_code=409, detail=f"Beverage with id {db_unit.beverage_id} does not exist")
+        session.rollback()
+        raise HTTPException(status_code=409, detail=f"Beverage with id {db_unit.beverage_id} or pallet with id {db_unit.received_via_pallet_id} does not exist")
     session.refresh(db_unit)
     return db_unit
 
@@ -416,7 +427,8 @@ def delete_packaging_unit(unit_id: int, session: Session = Depends(get_session))
     try:
         session.commit()
     except IntegrityError:
-        raise HTTPException(status_code=409, detail=f"Packaging unit with id {unit_id} is still stocked")
+        session.rollback()
+        raise HTTPException(status_code=409, detail=f"Packaging unit with id {unit_id} is still part of a delivery")
 
 
 # ---------- Pallet ----------
@@ -458,6 +470,7 @@ def create_pallet(pallet: PalletCreate, session: Session = Depends(get_session))
     try:
         session.commit()
     except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail=f"Beverage with id {db_pallet.beverage_id} or goods receipt with id {db_pallet.goods_receipt_id} does not exist")
     session.refresh(db_pallet)
     return db_pallet
@@ -523,6 +536,7 @@ def unpack_pallet(pallet_id: int, session: Session = Depends(get_session)):
     try:
         session.commit()
     except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail="Error deleting existing packaging units")
 
     return unpack(pallet, session)
@@ -545,6 +559,7 @@ def update_pallet(
     try:
         session.commit()
     except IntegrityError:
+        session.rollback()
         raise HTTPException(status_code=409, detail=f"Beverage with id {db_pallet.beverage_id} does not exist")
     session.refresh(db_pallet)
     return db_pallet
@@ -560,4 +575,5 @@ def delete_pallet(pallet_id: int, session: Session = Depends(get_session)):
     try:
         session.commit()
     except IntegrityError:
-        raise HTTPException(status_code=409, detail=f"Pallet with id {pallet_id} still has unpacked kegs/crates referencing it")
+        session.rollback()
+        raise HTTPException(status_code=409, detail=f"Pallet with id {pallet_id} still has packaging units referencing it")
