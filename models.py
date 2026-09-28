@@ -4,6 +4,7 @@ import json
 from datetime import date
 from enum import Enum
 from typing import Optional
+from pydantic import field_validator
 from sqlmodel import SQLModel, Field
 
 # ---------- General Business Logic ----------
@@ -44,6 +45,10 @@ class BeverageRead(BeverageBase):
 
 # ---------- Delivery ----------
 
+def deduplicate_unit_ids(unit_ids: list[int]) -> list[int]:
+    # dict.fromkeys drops duplicates while keeping the order they were sent in
+    return list(dict.fromkeys(unit_ids))
+
 class DeliveryBase(SQLModel):
     delivery_date: date
     customer: str
@@ -53,6 +58,8 @@ class Delivery(DeliveryBase, table=True):
 
 class DeliveryCreate(DeliveryBase):
     unit_ids: list[int] = []
+
+    _deduplicate_unit_ids = field_validator("unit_ids")(deduplicate_unit_ids)
 
 class DeliveryRead(DeliveryBase):
     id: int
@@ -64,6 +71,8 @@ class DeliveryMetaDataUpdate(SQLModel):
 
 class DeliveryPayloadUpdate(SQLModel):
     unit_ids: list[int]
+
+    _deduplicate_unit_ids = field_validator("unit_ids")(deduplicate_unit_ids)
 
 class DeliveryItem(SQLModel, table=True):
     delivery_id: int = Field(primary_key=True, foreign_key="delivery.id")

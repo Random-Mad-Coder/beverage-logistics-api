@@ -8,6 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from constants import DELIVERY_UNIT_GONE_MESSAGE
 from database import create_db_and_tables, get_session
 from models import (
     BeverageType,
@@ -185,7 +186,7 @@ def create_delivery(
         session.commit()
     except IntegrityError:
         session.rollback()
-        raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
+        raise HTTPException(status_code=409, detail=DELIVERY_UNIT_GONE_MESSAGE)
     
     return DeliveryRead(
         delivery_date=db_delivery.delivery_date,
@@ -258,7 +259,7 @@ def update_delivery_payload(
         session.commit()
     except IntegrityError:
         session.rollback()
-        raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
+        raise HTTPException(status_code=409, detail=DELIVERY_UNIT_GONE_MESSAGE)
 
     return DeliveryRead(
         delivery_date=delivery.delivery_date,
@@ -287,7 +288,7 @@ def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
         session.commit()
     except IntegrityError:
         session.rollback()
-        raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
+        raise HTTPException(status_code=409, detail=DELIVERY_UNIT_GONE_MESSAGE)
 
 
 # ---------- GoodsReceipt ----------
