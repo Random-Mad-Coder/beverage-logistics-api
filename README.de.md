@@ -21,7 +21,7 @@ Portfolio-Projekt für Backend-Entwicklung.
 Flache Dateistruktur, kein `app/`-Paket:
 
 ```
-keg-logistics-api/
+beverage-logistics-api/
 ├── main.py           # FastAPI-App, alle Routen
 ├── models.py         # SQLModel-Entitäten, Enums, Request-/Response-Schemas
 ├── database.py       # Engine, Session-Dependency
@@ -157,7 +157,7 @@ PostgreSQL-Ausbaustufe (siehe [Roadmap](#roadmap)).
 
 ```powershell
 git clone <repo-url>
-cd keg-logistics-api
+cd beverage-logistics-api
 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -173,8 +173,8 @@ Dokumentation unter `http://localhost:8000/docs`.
 ## Mit Docker ausführen
 
 ```bash
-docker build -t keg-logistics-api .
-docker run -p 8000:8000 keg-logistics-api
+docker build -t beverage-logistics-api .
+docker run -p 8000:8000 beverage-logistics-api
 ```
 
 Der Container läuft als Nicht-Root-Benutzer und basiert auf

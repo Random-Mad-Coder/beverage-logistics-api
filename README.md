@@ -21,7 +21,7 @@ project.
 Flat file structure, no `app/` package:
 
 ```
-keg-logistics-api/
+beverage-logistics-api/
 ├── main.py           # FastAPI app, all route definitions
 ├── models.py         # SQLModel entities, enums, request/response schemas
 ├── database.py       # engine, session dependency
@@ -148,7 +148,7 @@ stage (see [Roadmap](#roadmap)).
 
 ```powershell
 git clone <repo-url>
-cd keg-logistics-api
+cd beverage-logistics-api
 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -164,8 +164,8 @@ at `http://localhost:8000/docs`.
 ## Running with Docker
 
 ```bash
-docker build -t keg-logistics-api .
-docker run -p 8000:8000 keg-logistics-api
+docker build -t beverage-logistics-api .
+docker run -p 8000:8000 beverage-logistics-api
 ```
 
 The container runs as a non-root user and is based on `python:3.14.3-slim`
