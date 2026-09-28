@@ -130,7 +130,7 @@ class PalletBase(SQLModel):
     container_type: ContainerType
     beverage_id: int
     goods_receipt_id: int
-    quantity: int
+    quantity: int = Field(ge=0)
     best_before_date: date
 
 class Pallet(PalletBase, table=True):
@@ -147,5 +147,5 @@ class PalletRead(PalletBase):
 class PalletUpdate(SQLModel):
     container_type: Optional[ContainerType] = None
     beverage_id: Optional[int] = None
-    quantity: Optional[int] = None
+    quantity: Optional[int] = Field(default=None, ge=0)
     best_before_date: Optional[date] = None
