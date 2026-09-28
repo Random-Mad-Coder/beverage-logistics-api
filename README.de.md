@@ -1,4 +1,4 @@
-# Fass-Logistik-API (Keg Logistics API)
+# Beverage Logistics API
 
 [English](README.md) | **Deutsch**
 
@@ -139,6 +139,12 @@ Endpunkten bedient.
 zeigt: Er aggregiert und filtert auf Datenbankseite (SQL `GROUP BY` /
 `HAVING`), statt alle Datensätze zu laden und in Python zu zählen.
 
+Die interaktive Dokumentation unter `/docs` gruppiert die Endpunkte nach
+diesen Bereichen und beschreibt nicht offensichtliches Verhalten sowie die
+möglichen Fehlerantworten. 409-Antworten, die Gebinde-IDs auflisten, liefern
+ein strukturiertes `detail` (`{"message": ..., "unit_ids": [...]}`), alle
+anderen Fehler einen einfachen String.
+
 ## Bekannte Einschränkung
 
 Es gibt noch keine Schema-Migrationen. Die Tabellen werden mit `create_all`
@@ -212,3 +218,7 @@ sind hier als Planung dokumentiert, nicht als umgesetzte Funktionen.
    - Infrastructure as Code (Terraform)
    - JWT-basierte Authentifizierung für schreibende Endpunkte
    - Observability: Health-Endpunkt, Logging, Metriken
+
+## Lizenz
+
+[MIT](LICENSE)

@@ -1,4 +1,4 @@
-# Fass-Logistik-API (Keg Logistics API)
+# Beverage Logistics API
 
 **English** | [Deutsch](README.de.md)
 
@@ -131,6 +131,11 @@ served by the endpoints below.
 than plain CRUD: it aggregates and filters on the database side (SQL
 `GROUP BY` / `HAVING`) rather than loading all rows and counting in Python.
 
+The interactive docs at `/docs` group the endpoints by these areas and
+describe non-obvious behavior and the possible error responses. 409
+responses that list packaging unit ids return a structured `detail`
+(`{"message": ..., "unit_ids": [...]}`), all other errors a plain string.
+
 ## Known limitation
 
 There are no schema migrations yet. Tables are created with SQLModel's
@@ -204,3 +209,7 @@ they are documented here as planning, not as implemented features.
    - Infrastructure as Code (Terraform)
    - JWT-based authentication for write endpoints
    - Observability: health endpoint, logging, metrics
+
+## License
+
+[MIT](LICENSE)
