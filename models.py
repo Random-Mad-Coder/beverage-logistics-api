@@ -1,5 +1,4 @@
-"""
-"""
+"""SQLModel entities, enums and request/response schemas of the Beverage Logistics API."""
 import json
 from datetime import date
 from enum import Enum
@@ -43,6 +42,20 @@ class BeverageCreate(BeverageBase):
 class BeverageRead(BeverageBase):
     id: int
 
+# ---------- Errors ----------
+
+class ErrorResponse(SQLModel):
+    detail: str
+
+class UnitConflictDetail(SQLModel):
+    message: str
+    unit_ids: list[int]
+
+# 409 responses listing packaging unit ids use the structured detail,
+# conflicts caught reactively from the database use a plain string
+class UnitConflictResponse(SQLModel):
+    detail: UnitConflictDetail | str
+
 # ---------- Delivery ----------
 
 def deduplicate_unit_ids(unit_ids: list[int]) -> list[int]:
@@ -70,7 +83,7 @@ class DeliveryMetaDataUpdate(SQLModel):
     customer: Optional[str] = None
 
 class DeliveryPayloadUpdate(SQLModel):
-    unit_ids: list[int]
+    unit_ids: list[int] = Field(description="Complete new list of packaging unit ids; duplicates are removed")
 
     _deduplicate_unit_ids = field_validator("unit_ids")(deduplicate_unit_ids)
 
@@ -83,7 +96,7 @@ class DeliveryItem(SQLModel, table=True):
 class GoodsReceiptBase(SQLModel):
     receipt_date: date
     supplier: str
-    expected_pallet_count: Optional[int] = None
+    expected_pallet_count: Optional[int] = Field(default=None, description="Pallet count stated on the delivery slip")
 
 class GoodsReceipt(GoodsReceiptBase, table=True):
     __tablename__ = "goods_receipt"
@@ -94,12 +107,12 @@ class GoodsReceiptCreate(GoodsReceiptBase):
 
 class GoodsReceiptRead(GoodsReceiptBase):
     id: int
-    actual_pallet_count: int
+    actual_pallet_count: int = Field(description="Number of pallets recorded for this goods receipt, a checksum against expected_pallet_count")
 
 class GoodsReceiptUpdate(SQLModel):
     receipt_date: Optional[date] = None
     supplier: Optional[str] = None
-    expected_pallet_count: Optional[int] = None
+    expected_pallet_count: Optional[int] = Field(default=None, description="Pallet count stated on the delivery slip; send null to reset it")
 
 # ---------- Inventory ----------
 
@@ -116,7 +129,7 @@ class PackagingUnitBase(SQLModel):
     beverage_id: int
     status: Status = Status.FULL
     best_before_date: date
-    received_via_pallet_id: Optional[int] = None
+    received_via_pallet_id: Optional[int] = Field(default=None, description="Pallet this unit was unpacked from, empty for units created directly")
 
 class PackagingUnit(PackagingUnitBase, table=True):
     __tablename__ = "packaging_unit"

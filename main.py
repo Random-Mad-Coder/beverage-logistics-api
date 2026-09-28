@@ -23,6 +23,7 @@ from models import (
     DeliveryMetaDataUpdate,
     DeliveryPayloadUpdate,
     DeliveryItem,
+    ErrorResponse,
     GoodsReceipt,
     GoodsReceiptCreate,
     GoodsReceiptRead,
@@ -35,7 +36,8 @@ from models import (
     Pallet,
     PalletCreate,
     PalletRead,
-    PalletUpdate
+    PalletUpdate,
+    UnitConflictResponse
 )
 
 
@@ -46,12 +48,44 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Beverage Logistics API", lifespan=lifespan)
+tags_metadata = [
+    {"name": "Beverages", "description": "Beverages as master data"},
+    {"name": "Goods receipts", "description": "Incoming goods, recorded from the delivery slip"},
+    {"name": "Pallets", "description": "Pallets of a goods receipt and unpacking them into packaging units"},
+    {"name": "Packaging units", "description": "Individual kegs and crates"},
+    {"name": "Deliveries", "description": "Outgoing deliveries of packaging units to customers"},
+    {"name": "Inventory", "description": "Stock of full packaging units below a reserve"},
+]
+
+app = FastAPI(
+    title="Beverage Logistics API",
+    description="REST API for managing beverage stock, incoming goods and deliveries of a brewery (kegs and crates).",
+    version="1.0.0",
+    openapi_tags=tags_metadata,
+    lifespan=lifespan,
+)
+
+NOT_FOUND = {404: {"model": ErrorResponse, "description": "Resource not found"}}
+
+
+def conflict(description: str, model: type = ErrorResponse) -> dict:
+    return {409: {"model": model, "description": description}}
+
 
 # ---------- Inventory ----------
 
-@app.get("/inventory", response_model=list[InventoryReport])
-def get_inventory(reserve: int, session: Session = Depends(get_session)):
+@app.get("/inventory", response_model=list[InventoryReport], tags=["Inventory"])
+def get_inventory(
+    reserve: int = Query(description="Report combinations with fewer full units than this"),
+    session: Session = Depends(get_session)
+):
+    """Count full packaging units per beverage and container type and return the
+    combinations whose count is below `reserve` (strictly less than).
+
+    Only units with status `full` are counted. Combinations without any full
+    units are not reported: whether empty or cleaned containers mean a
+    restocking need is left to the client.
+    """
     query = (
         select(Beverage.id, Beverage.name, PackagingUnit.container_type, func.count())
         .join(PackagingUnit, PackagingUnit.beverage_id == Beverage.id)
@@ -66,7 +100,7 @@ def get_inventory(reserve: int, session: Session = Depends(get_session)):
 
 # ---------- Beverage ----------
 
-@app.get("/beverages", response_model=list[BeverageRead])
+@app.get("/beverages", response_model=list[BeverageRead], tags=["Beverages"])
 def list_beverages(
     name: Optional[str] = Query(default=None),
     beverage_type: Optional[BeverageType] = Query(default=None),
@@ -81,7 +115,7 @@ def list_beverages(
     return session.exec(query).all()
 
 
-@app.get("/beverages/{beverage_id}", response_model=BeverageRead)
+@app.get("/beverages/{beverage_id}", response_model=BeverageRead, tags=["Beverages"], responses=NOT_FOUND)
 def get_beverage(beverage_id: int, session: Session = Depends(get_session)):
     beverage = session.get(Beverage, beverage_id)
     if not beverage:
@@ -89,7 +123,7 @@ def get_beverage(beverage_id: int, session: Session = Depends(get_session)):
     return beverage
 
 
-@app.post("/beverages", response_model=BeverageRead, status_code=201)
+@app.post("/beverages", response_model=BeverageRead, status_code=201, tags=["Beverages"], responses=conflict("A beverage with this name already exists"))
 def create_beverage(beverage: BeverageCreate, session: Session = Depends(get_session)):
     db_beverage = Beverage.model_validate(beverage)
     session.add(db_beverage)
@@ -104,7 +138,7 @@ def create_beverage(beverage: BeverageCreate, session: Session = Depends(get_ses
     return db_beverage
 
 
-@app.delete("/beverages/{beverage_id}", status_code=204)
+@app.delete("/beverages/{beverage_id}", status_code=204, tags=["Beverages"], responses={**NOT_FOUND, **conflict("Beverage is still referenced by packaging units or pallets")})
 def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
     beverage = session.get(Beverage, beverage_id)
     if not beverage:
@@ -120,7 +154,7 @@ def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
 
 # ---------- Delivery ----------
 
-@app.get("/deliveries", response_model=list[DeliveryRead])
+@app.get("/deliveries", response_model=list[DeliveryRead], tags=["Deliveries"])
 def list_deliveries(
     delivery_date: Optional[date] = Query(default=None),
     customer: Optional[str] = Query(default=None),
@@ -145,7 +179,7 @@ def list_deliveries(
     return [DeliveryRead(id=d.id, delivery_date=d.delivery_date, customer=d.customer, unit_ids=unit_ids_by_delivery[d.id]) for d in deliveries]
 
 
-@app.get("/deliveries/{delivery_id}", response_model=DeliveryRead)
+@app.get("/deliveries/{delivery_id}", response_model=DeliveryRead, tags=["Deliveries"], responses=NOT_FOUND)
 def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
     delivery = session.get(Delivery, delivery_id)
     if not delivery:
@@ -162,10 +196,15 @@ def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
     )
 
 
-@app.post("/deliveries", response_model=DeliveryRead, status_code=201)
+@app.post("/deliveries", response_model=DeliveryRead, status_code=201, tags=["Deliveries"], responses=conflict("Unknown packaging unit ids, listed in detail.unit_ids", UnitConflictResponse))
 def create_delivery(
     delivery: DeliveryCreate, session: Session = Depends(get_session)
 ):
+    """Create a delivery for the given packaging units.
+
+    Duplicate `unit_ids` are removed. A unit may appear in several deliveries,
+    as deliveries are historic records and units are reused.
+    """
     db_delivery = Delivery.model_validate(delivery)
     query = select(PackagingUnit.id).where(PackagingUnit.id.in_(delivery.unit_ids))
     existing_unit_ids = session.exec(query).all()
@@ -196,10 +235,14 @@ def create_delivery(
     )
 
 
-@app.patch("/deliveries/{delivery_id}/metadata", response_model=DeliveryRead)
+@app.patch("/deliveries/{delivery_id}/metadata", response_model=DeliveryRead, tags=["Deliveries"], responses=NOT_FOUND)
 def update_delivery_metadata(
     delivery_id: int, update: DeliveryMetaDataUpdate, session: Session = Depends(get_session)
 ):
+    """Update the date and/or customer of a delivery.
+
+    Fields that are omitted or null are left unchanged, as is a blank customer.
+    """
     delivery = session.get(Delivery, delivery_id)
     if not delivery:
         raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
@@ -224,10 +267,16 @@ def update_delivery_metadata(
         unit_ids=unit_ids
     )
 
-@app.patch("/deliveries/{delivery_id}/payload", response_model=DeliveryRead)
+@app.patch("/deliveries/{delivery_id}/payload", response_model=DeliveryRead, tags=["Deliveries"], responses={**NOT_FOUND, **conflict("Unknown packaging unit ids, listed in detail.unit_ids", UnitConflictResponse)})
 def update_delivery_payload(
     delivery_id: int, update: DeliveryPayloadUpdate, session: Session = Depends(get_session)
 ):
+    """Replace the packaging units of a delivery with the given list.
+
+    Units missing from the list are removed from the delivery, new ones are
+    added. If any new unit id does not exist, nothing is changed and the 409
+    lists the unknown ids.
+    """
     delivery = session.get(Delivery, delivery_id)
     if not delivery:
         raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
@@ -269,8 +318,9 @@ def update_delivery_payload(
     )
 
 
-@app.delete("/deliveries/{delivery_id}", status_code=204)
+@app.delete("/deliveries/{delivery_id}", status_code=204, tags=["Deliveries"], responses={**NOT_FOUND, **conflict("Conflict with a concurrent change to the delivery")})
 def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
+    """Delete a delivery together with its items. The packaging units themselves are kept."""
     delivery = session.get(Delivery, delivery_id)
     if not delivery:
         raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
@@ -298,7 +348,7 @@ def count_pallets(goods_receipt_id: int, session: Session) -> int:
     return session.exec(query).one()
 
 
-@app.get("/goods-receipts", response_model=list[GoodsReceiptRead])
+@app.get("/goods-receipts", response_model=list[GoodsReceiptRead], tags=["Goods receipts"])
 def list_goods_receipt(
     receipt_date: Optional[date] = Query(default=None),
     supplier: Optional[str] = Query(default=None),
@@ -323,7 +373,7 @@ def list_goods_receipt(
     return [GoodsReceiptRead.model_validate(r, update={"actual_pallet_count": pallet_counts.get(r.id, 0)}) for r in goods_receipts]
 
 
-@app.get("/goods-receipts/{goods_receipt_id}", response_model=GoodsReceiptRead)
+@app.get("/goods-receipts/{goods_receipt_id}", response_model=GoodsReceiptRead, tags=["Goods receipts"], responses=NOT_FOUND)
 def get_goods_receipt(goods_receipt_id: int, session: Session = Depends(get_session)):
     goods_receipt = session.get(GoodsReceipt, goods_receipt_id)
     if not goods_receipt:
@@ -332,7 +382,7 @@ def get_goods_receipt(goods_receipt_id: int, session: Session = Depends(get_sess
     return GoodsReceiptRead.model_validate(goods_receipt, update={"actual_pallet_count": count_pallets(goods_receipt_id, session)})
 
 
-@app.post("/goods-receipts", response_model=GoodsReceiptRead, status_code=201)
+@app.post("/goods-receipts", response_model=GoodsReceiptRead, status_code=201, tags=["Goods receipts"])
 def create_goods_receipt(goods_receipt: GoodsReceiptCreate, session: Session = Depends(get_session)):
     db_goods_receipt = GoodsReceipt.model_validate(goods_receipt)
     session.add(db_goods_receipt)
@@ -342,10 +392,15 @@ def create_goods_receipt(goods_receipt: GoodsReceiptCreate, session: Session = D
     return GoodsReceiptRead.model_validate(db_goods_receipt, update={"actual_pallet_count": 0})
 
 
-@app.patch("/goods-receipts/{goods_receipt_id}", response_model=GoodsReceiptRead)
+@app.patch("/goods-receipts/{goods_receipt_id}", response_model=GoodsReceiptRead, tags=["Goods receipts"], responses=NOT_FOUND)
 def update_goods_receipt(
     goods_receipt_id: int, update: GoodsReceiptUpdate, session: Session = Depends(get_session)
 ):
+    """Update the fields sent in the request.
+
+    Sending null resets `expected_pallet_count`; null for `receipt_date` or
+    `supplier` is ignored, as both are required.
+    """
     db_receipt = session.get(GoodsReceipt, goods_receipt_id)
     if not db_receipt:
         raise HTTPException(status_code=404, detail=f"Goods receipt with id {goods_receipt_id} not found")
@@ -365,7 +420,7 @@ def update_goods_receipt(
     return GoodsReceiptRead.model_validate(db_receipt, update={"actual_pallet_count": count_pallets(goods_receipt_id, session)})
 
 
-@app.delete("/goods-receipts/{goods_receipt_id}", status_code=204)
+@app.delete("/goods-receipts/{goods_receipt_id}", status_code=204, tags=["Goods receipts"], responses={**NOT_FOUND, **conflict("Goods receipt still has pallets")})
 def delete_goods_receipt(goods_receipt_id: int, session: Session = Depends(get_session)):
     goods_receipt = session.get(GoodsReceipt, goods_receipt_id)
     if not goods_receipt:
@@ -381,7 +436,7 @@ def delete_goods_receipt(goods_receipt_id: int, session: Session = Depends(get_s
 
 # ---------- PackagingUnit ----------
 
-@app.get("/packaging-units", response_model=list[PackagingUnitRead])
+@app.get("/packaging-units", response_model=list[PackagingUnitRead], tags=["Packaging units"])
 def list_packaging_units(
     beverage_name: Optional[str] = Query(default=None),
     container_type: Optional[ContainerType] = Query(default=None),
@@ -399,7 +454,7 @@ def list_packaging_units(
     return session.exec(query).all()
 
 
-@app.get("/packaging-units/{unit_id}", response_model=PackagingUnitRead)
+@app.get("/packaging-units/{unit_id}", response_model=PackagingUnitRead, tags=["Packaging units"], responses=NOT_FOUND)
 def get_packaging_unit(unit_id: int, session: Session = Depends(get_session)):
     unit = session.get(PackagingUnit, unit_id)
     if not unit:
@@ -407,7 +462,7 @@ def get_packaging_unit(unit_id: int, session: Session = Depends(get_session)):
     return unit
 
 
-@app.post("/packaging-units", response_model=PackagingUnitRead, status_code=201)
+@app.post("/packaging-units", response_model=PackagingUnitRead, status_code=201, tags=["Packaging units"], responses=conflict("Unknown beverage or pallet"))
 def create_packaging_unit(unit: PackagingUnitCreate, session: Session = Depends(get_session)):
     db_unit = PackagingUnit.model_validate(unit)
     session.add(db_unit)
@@ -420,7 +475,7 @@ def create_packaging_unit(unit: PackagingUnitCreate, session: Session = Depends(
     return db_unit
 
 
-@app.patch("/packaging-units/{unit_id}", response_model=PackagingUnitRead)
+@app.patch("/packaging-units/{unit_id}", response_model=PackagingUnitRead, tags=["Packaging units"], responses=NOT_FOUND)
 def update_packaging_unit(
     unit_id: int, update: PackagingUnitUpdate, session: Session = Depends(get_session)
 ):
@@ -435,7 +490,7 @@ def update_packaging_unit(
     return unit
 
 
-@app.delete("/packaging-units/{unit_id}", status_code=204)
+@app.delete("/packaging-units/{unit_id}", status_code=204, tags=["Packaging units"], responses={**NOT_FOUND, **conflict("Packaging unit is still part of a delivery")})
 def delete_packaging_unit(unit_id: int, session: Session = Depends(get_session)):
     unit = session.get(PackagingUnit, unit_id)
     if not unit:
@@ -451,7 +506,7 @@ def delete_packaging_unit(unit_id: int, session: Session = Depends(get_session))
 
 # ---------- Pallet ----------
 
-@app.get("/pallets", response_model=list[PalletRead])
+@app.get("/pallets", response_model=list[PalletRead], tags=["Pallets"])
 def list_pallets(
     best_before: Optional[date] = Query(default=None),
     beverage_id: Optional[int] = Query(default=None),
@@ -472,7 +527,7 @@ def list_pallets(
     return session.exec(query).all()
 
 
-@app.get("/pallets/{pallet_id}", response_model=PalletRead)
+@app.get("/pallets/{pallet_id}", response_model=PalletRead, tags=["Pallets"], responses=NOT_FOUND)
 def get_pallet(pallet_id: int, session: Session = Depends(get_session)):
     pallet = session.get(Pallet, pallet_id)
     if not pallet:
@@ -481,7 +536,7 @@ def get_pallet(pallet_id: int, session: Session = Depends(get_session)):
     return PalletRead.model_validate(pallet)
 
 
-@app.post("/pallets", response_model=PalletRead, status_code=201)
+@app.post("/pallets", response_model=PalletRead, status_code=201, tags=["Pallets"], responses=conflict("Unknown beverage or goods receipt"))
 def create_pallet(pallet: PalletCreate, session: Session = Depends(get_session)):
     db_pallet = Pallet.model_validate(pallet)
     session.add(db_pallet)
@@ -495,6 +550,7 @@ def create_pallet(pallet: PalletCreate, session: Session = Depends(get_session))
 
 
 def unpack(pallet: Pallet, session: Session) -> list[PackagingUnit]:
+    """Create one packaging unit per item on the pallet, inheriting its attributes."""
     item_list = [        
         PackagingUnit(
             container_type=pallet.container_type,
@@ -512,8 +568,15 @@ def unpack(pallet: Pallet, session: Session) -> list[PackagingUnit]:
     return item_list
 
 
-@app.post("/pallets/{pallet_id}/unpack", response_model=list[PackagingUnitRead])
+@app.post("/pallets/{pallet_id}/unpack", response_model=list[PackagingUnitRead], tags=["Pallets"], responses={**NOT_FOUND, **conflict("Already unpacked with unchanged data, or packaging units still part of a delivery (listed in detail.unit_ids)", UnitConflictResponse)})
 def unpack_pallet(pallet_id: int, session: Session = Depends(get_session)):
+    """Unpack a pallet into one packaging unit per item.
+
+    Unpacking again returns 409 if the pallet data is unchanged. If the pallet
+    was changed in the meantime, the existing units are deleted and recreated
+    from the current data, unless some of them are still part of a delivery;
+    then the 409 lists their ids.
+    """
     pallet = session.get(Pallet, pallet_id)
     if not pallet:
         raise HTTPException(status_code=404, detail=f"Pallet with id {pallet_id} not found")
@@ -560,7 +623,7 @@ def unpack_pallet(pallet_id: int, session: Session = Depends(get_session)):
     return unpack(pallet, session)
 
 
-@app.patch("/pallets/{pallet_id}", response_model=PalletRead)
+@app.patch("/pallets/{pallet_id}", response_model=PalletRead, tags=["Pallets"], responses={**NOT_FOUND, **conflict("Unknown beverage")})
 def update_pallet(
     pallet_id: int, update: PalletUpdate, session: Session = Depends(get_session)
 ):
@@ -583,7 +646,7 @@ def update_pallet(
     return db_pallet
 
 
-@app.delete("/pallets/{pallet_id}", status_code=204)
+@app.delete("/pallets/{pallet_id}", status_code=204, tags=["Pallets"], responses={**NOT_FOUND, **conflict("Pallet still has packaging units")})
 def delete_pallet(pallet_id: int, session: Session = Depends(get_session)):
     pallet = session.get(Pallet, pallet_id)
     if not pallet:
