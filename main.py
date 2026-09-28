@@ -121,13 +121,13 @@ def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
 
 @app.get("/deliveries", response_model=list[DeliveryRead])
 def list_deliveries(
-    date: Optional[date] = Query(default=None),
+    delivery_date: Optional[date] = Query(default=None),
     customer: Optional[str] = Query(default=None),
     session: Session = Depends(get_session)
 ):
     query = select(Delivery)
-    if date:
-        query = query.where(Delivery.date == date)
+    if delivery_date:
+        query = query.where(Delivery.delivery_date == delivery_date)
     if customer:
         query = query.where(Delivery.customer == customer)
 
@@ -141,7 +141,7 @@ def list_deliveries(
     for item in delivery_items:
         unit_ids_by_delivery[item.delivery_id].append(item.unit_id)
 
-    return [DeliveryRead(id=d.id, date=d.date, customer=d.customer, unit_ids=unit_ids_by_delivery[d.id]) for d in deliveries]
+    return [DeliveryRead(id=d.id, delivery_date=d.delivery_date, customer=d.customer, unit_ids=unit_ids_by_delivery[d.id]) for d in deliveries]
 
 
 @app.get("/deliveries/{delivery_id}", response_model=DeliveryRead)
@@ -155,7 +155,7 @@ def get_delivery(delivery_id: int, session: Session = Depends(get_session)):
 
     return DeliveryRead(
         id=delivery.id,
-        date=delivery.date,
+        delivery_date=delivery.delivery_date,
         customer=delivery.customer,
         unit_ids=unit_ids,
     )
@@ -188,7 +188,7 @@ def create_delivery(
         raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
     
     return DeliveryRead(
-        date=db_delivery.date,
+        delivery_date=db_delivery.delivery_date,
         customer=db_delivery.customer,
         id=db_delivery.id,
         unit_ids=delivery.unit_ids
@@ -203,8 +203,8 @@ def update_delivery_metadata(
     if not delivery:
         raise HTTPException(status_code=404, detail=f"Delivery with id {delivery_id} not found")
 
-    if update.date:
-        delivery.date = update.date
+    if update.delivery_date:
+        delivery.delivery_date = update.delivery_date
 
     if update.customer and update.customer.strip():
         delivery.customer = update.customer
@@ -217,7 +217,7 @@ def update_delivery_metadata(
     unit_ids = session.exec(query).all()
 
     return DeliveryRead(
-        date=delivery.date,
+        delivery_date=delivery.delivery_date,
         customer=delivery.customer,
         id=delivery.id,
         unit_ids=unit_ids
@@ -261,7 +261,7 @@ def update_delivery_payload(
         raise HTTPException(status_code=409, detail="A packaging unit referenced in this delivery no longer exists")
 
     return DeliveryRead(
-        date=delivery.date,
+        delivery_date=delivery.delivery_date,
         customer=delivery.customer,
         id=delivery.id,
         unit_ids=update.unit_ids
@@ -296,13 +296,13 @@ def count_pallets(goods_receipt_id: int, session: Session) -> int:
 
 @app.get("/goods-receipts", response_model=list[GoodsReceiptRead])
 def list_goods_receipt(
-    date: Optional[date] = Query(default=None),
+    receipt_date: Optional[date] = Query(default=None),
     supplier: Optional[str] = Query(default=None),
     session: Session = Depends(get_session)
 ):
     query = select(GoodsReceipt)
-    if date:
-        query = query.where(GoodsReceipt.date == date)
+    if receipt_date:
+        query = query.where(GoodsReceipt.receipt_date == receipt_date)
     if supplier:
         query = query.where(GoodsReceipt.supplier == supplier)
 

@@ -45,7 +45,7 @@ class BeverageRead(BeverageBase):
 # ---------- Delivery ----------
 
 class DeliveryBase(SQLModel):
-    date: date
+    delivery_date: date
     customer: str
 
 class Delivery(DeliveryBase, table=True):
@@ -59,7 +59,7 @@ class DeliveryRead(DeliveryBase):
     unit_ids: list[int]
 
 class DeliveryMetaDataUpdate(SQLModel):
-    date: Optional[date] = None
+    delivery_date: Optional[date] = None
     customer: Optional[str] = None
 
 class DeliveryPayloadUpdate(SQLModel):
@@ -72,7 +72,7 @@ class DeliveryItem(SQLModel, table=True):
 # ---------- GoodsReceipt ----------
 
 class GoodsReceiptBase(SQLModel):
-    date: date
+    receipt_date: date
     supplier: str
     expected_pallet_count: Optional[int] = None
 
@@ -88,7 +88,7 @@ class GoodsReceiptRead(GoodsReceiptBase):
     actual_pallet_count: int
 
 class GoodsReceiptUpdate(SQLModel):
-    date: Optional[date] = None
+    receipt_date: Optional[date] = None
     supplier: Optional[str] = None
     expected_pallet_count: Optional[int] = None
 

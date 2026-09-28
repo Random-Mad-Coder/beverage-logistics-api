@@ -43,8 +43,8 @@ keg-logistics-api/
 | DELETE | `/kegs/{keg_id}`              | Delete a keg                                       |
 | POST   | `/deliveries`                 | Create a delivery                                  |
 | GET    | `/deliveries/{delivery_id}`   | Get a single delivery                              |
-| GET    | `/deliveries`                 | List deliveries, optionally filtered by `date`/`customer` |
-| PATCH  | `/deliveries/{delivery_id}/metadata` | Update delivery `date` and/or `customer`    |
+| GET    | `/deliveries`                 | List deliveries, optionally filtered by `delivery_date`/`customer` |
+| PATCH  | `/deliveries/{delivery_id}/metadata` | Update delivery `delivery_date` and/or `customer` |
 | PATCH  | `/deliveries/{delivery_id}/payload`  | Replace a delivery's `keg_ids`              |
 | DELETE | `/deliveries/{delivery_id}`   | Delete a delivery                                  |
 | GET    | `/inventory?reserve={n}`      | Business-logic endpoint: for each variety, count kegs with `status=full` and return only varieties whose count is below `reserve` |
