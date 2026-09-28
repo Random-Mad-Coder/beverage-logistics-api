@@ -1,5 +1,4 @@
 """SQLModel entities, enums and request/response schemas of the Beverage Logistics API."""
-import json
 from datetime import date
 from enum import Enum
 from typing import Optional

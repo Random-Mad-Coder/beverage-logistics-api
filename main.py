@@ -149,7 +149,7 @@ def delete_beverage(beverage_id: int, session: Session = Depends(get_session)):
         session.commit()
     except IntegrityError:
         session.rollback()
-        raise HTTPException(status_code=409, detail=f"Beverage with id {beverage_id} is still stocked")
+        raise HTTPException(status_code=409, detail=f"Beverage with id {beverage_id} is still referenced by packaging units or pallets")
 
 
 # ---------- Delivery ----------
