@@ -37,6 +37,11 @@ def test_unpack_pallet_unpack_after_change(client: TestClient, pallet: int):
 
 
 def test_unpack_pallet_conflict(client: TestClient, pallet: int, unpacked_pallet: list[int], delivery: dict):
+    # Change the pallet first, otherwise the unchanged-data 409 is hit before the delivery check
+    new_bbdate = datetime.today() + relativedelta(years=2)
+    response = client.patch(f"/pallets/{pallet}", json={"best_before_date": new_bbdate.strftime(DATE_FORMAT_STRING)})
+    assert response.status_code == 200
+
     response = client.post(f"/pallets/{pallet}/unpack")
     assert response.status_code == 409
     conflict_ids = response.json()["detail"]["unit_ids"]

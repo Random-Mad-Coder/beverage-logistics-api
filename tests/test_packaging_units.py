@@ -1,29 +1,156 @@
 from fastapi.testclient import TestClient
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+from constants import DATE_FORMAT_STRING
 
-def test_create_keg(client: TestClient):
-    response = client.post("/kegs", json={"size": "50l", "variety": "pilsener"})
+
+def create_unit(client: TestClient, beverage_id: int, container_type: str = "keg_50l") -> dict:
+    bbdate = datetime.today() + relativedelta(years=1)
+    response = client.post("/packaging-units", json={"container_type": container_type, "beverage_id": beverage_id, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_create_packaging_unit_success(client: TestClient, beverage: int):
+    bbdate = datetime.today() + relativedelta(years=1)
+    response = client.post("/packaging-units", json={"container_type": "keg_50l", "beverage_id": beverage, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
     assert response.status_code == 201
 
     data = response.json()
-    assert data["size"] == "50l"
-    assert data["variety"] == "pilsener"
-    assert data["status"] == "empty"
     assert "id" in data
+    assert data["container_type"] == "keg_50l"
+    assert data["beverage_id"] == beverage
+    assert data["status"] == "full"
+    assert data["best_before_date"] == bbdate.strftime(DATE_FORMAT_STRING)
+    assert data["received_via_pallet_id"] is None
 
-def test_get_keg_success_200(client: TestClient):
-    response = client.post("/kegs", json={"size": "50l", "variety": "pilsener"})
+
+def test_create_packaging_unit_with_pallet_reference(client: TestClient, beverage: int, pallet: int):
+    bbdate = datetime.today() + relativedelta(years=1)
+    response = client.post("/packaging-units", json={"container_type": "crate_20x05l", "beverage_id": beverage, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING), "received_via_pallet_id": pallet})
     assert response.status_code == 201
-    created = response.json()
+    assert response.json()["received_via_pallet_id"] == pallet
 
-    response = client.get(f"/kegs/{created['id']}")
+
+def test_create_packaging_unit_invalid_beverage_409(client: TestClient):
+    bbdate = datetime.today() + relativedelta(years=1)
+    response = client.post("/packaging-units", json={"container_type": "keg_50l", "beverage_id": 999, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
+    assert response.status_code == 409
+    assert isinstance(response.json()["detail"], str)
+
+    response = client.get("/packaging-units")
     assert response.status_code == 200
-    data = response.json()
-    assert data["id"] == created["id"]
-    assert data["size"] == "50l"
-    assert data["variety"] == "pilsener"
-    assert data["status"] == "empty"
+    assert response.json() == []
 
 
-def test_get_keg_not_found_404(client: TestClient):
-    response = client.get("/kegs/1")
+def test_create_packaging_unit_invalid_pallet_409(client: TestClient, beverage: int):
+    bbdate = datetime.today() + relativedelta(years=1)
+    response = client.post("/packaging-units", json={"container_type": "keg_50l", "beverage_id": beverage, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING), "received_via_pallet_id": 999})
+    assert response.status_code == 409
+
+
+def test_create_packaging_unit_invalid_container_type_422(client: TestClient, beverage: int):
+    bbdate = datetime.today() + relativedelta(years=1)
+    response = client.post("/packaging-units", json={"container_type": "barrel", "beverage_id": beverage, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
+    assert response.status_code == 422
+
+
+def test_get_packaging_unit_success(client: TestClient, beverage: int):
+    created = create_unit(client, beverage)
+
+    response = client.get(f"/packaging-units/{created['id']}")
+    assert response.status_code == 200
+    assert response.json() == created
+
+
+def test_get_packaging_unit_not_found_404(client: TestClient):
+    response = client.get("/packaging-units/1")
     assert response.status_code == 404
+
+
+def test_list_packaging_units_empty(client: TestClient):
+    response = client.get("/packaging-units")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_packaging_units_filter_beverage_name(client: TestClient, beverage: int):
+    response = client.post("/beverages", json={"name": "Jenkins Pils", "type": "beer"})
+    assert response.status_code == 201
+    other_beverage = response.json()["id"]
+
+    unit = create_unit(client, beverage)
+    create_unit(client, other_beverage)
+
+    response = client.get("/packaging-units", params={"beverage_name": "Jenkins Cola"})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [unit["id"]]
+
+
+def test_list_packaging_units_filter_container_type(client: TestClient, beverage: int):
+    keg = create_unit(client, beverage, "keg_30l")
+    create_unit(client, beverage, "crate_24x033l")
+
+    response = client.get("/packaging-units", params={"container_type": "keg_30l"})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [keg["id"]]
+
+
+def test_list_packaging_units_filter_status(client: TestClient, beverage: int):
+    empty_unit = create_unit(client, beverage)
+    create_unit(client, beverage)
+
+    response = client.patch(f"/packaging-units/{empty_unit['id']}", json={"status": "empty"})
+    assert response.status_code == 200
+
+    response = client.get("/packaging-units", params={"status": "empty"})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [empty_unit["id"]]
+
+
+def test_update_packaging_unit_status(client: TestClient, beverage: int):
+    created = create_unit(client, beverage)
+
+    response = client.patch(f"/packaging-units/{created['id']}", json={"status": "cleaned"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "cleaned"
+
+    response = client.get(f"/packaging-units/{created['id']}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "cleaned"
+
+
+def test_update_packaging_unit_missing_status_422(client: TestClient, beverage: int):
+    created = create_unit(client, beverage)
+
+    response = client.patch(f"/packaging-units/{created['id']}", json={})
+    assert response.status_code == 422
+
+
+def test_update_packaging_unit_not_found_404(client: TestClient):
+    response = client.patch("/packaging-units/1", json={"status": "empty"})
+    assert response.status_code == 404
+
+
+def test_delete_packaging_unit_success(client: TestClient, beverage: int):
+    created = create_unit(client, beverage)
+
+    response = client.delete(f"/packaging-units/{created['id']}")
+    assert response.status_code == 204
+
+    response = client.get(f"/packaging-units/{created['id']}")
+    assert response.status_code == 404
+
+
+def test_delete_packaging_unit_not_found_404(client: TestClient):
+    response = client.delete("/packaging-units/1")
+    assert response.status_code == 404
+
+
+def test_delete_packaging_unit_in_delivery_409(client: TestClient, unpacked_pallet: list[int], delivery: dict):
+    response = client.delete(f"/packaging-units/{unpacked_pallet[0]}")
+    assert response.status_code == 409
+    assert isinstance(response.json()["detail"], str)
+
+    response = client.get(f"/packaging-units/{unpacked_pallet[0]}")
+    assert response.status_code == 200
