@@ -3,7 +3,6 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 from sqlmodel import SQLModel, Session, create_engine
-from sqlalchemy import event
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
