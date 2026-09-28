@@ -45,7 +45,7 @@ def beverage_fixture(client: TestClient):
 @pytest.fixture(name="goods_receipt")
 def goods_receipt_fixture(client: TestClient):
     date = datetime.today().strftime(DATE_FORMAT_STRING)
-    response = client.post("/goods-receipts", json={"date": f"{date}", "supplier": "Doberman Beverages Inc."})
+    response = client.post("/goods-receipts", json={"receipt_date": f"{date}", "supplier": "Doberman Beverages Inc."})
     assert response.status_code == 201
     return response.json()["id"]
 
@@ -68,6 +68,6 @@ def unpacked_pallet_fixture(client: TestClient, pallet: int):
 @pytest.fixture(name="delivery")
 def delivery_fixture(client: TestClient, unpacked_pallet: list[int]):
     date = datetime.today()
-    response = client.post("/deliveries", json={"date": f"{date.strftime(DATE_FORMAT_STRING)}", "customer": "Thirsty People Ltd.", "unit_ids": unpacked_pallet})
+    response = client.post("/deliveries", json={"delivery_date": f"{date.strftime(DATE_FORMAT_STRING)}", "customer": "Thirsty People Ltd.", "unit_ids": unpacked_pallet})
     assert response.status_code == 201
     return response.json()

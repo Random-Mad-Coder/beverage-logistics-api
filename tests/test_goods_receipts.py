@@ -13,12 +13,12 @@ def create_pallet(client: TestClient, beverage_id: int, goods_receipt_id: int) -
 
 def test_create_goods_receipt_success(client: TestClient):
     date = datetime.today().strftime(DATE_FORMAT_STRING)
-    response = client.post("/goods-receipts", json={"date": date, "supplier": "Doberman Beverages Inc.", "expected_pallet_count": 3})
+    response = client.post("/goods-receipts", json={"receipt_date": date, "supplier": "Doberman Beverages Inc.", "expected_pallet_count": 3})
     assert response.status_code == 201
 
     data = response.json()
     assert "id" in data
-    assert data["date"] == date
+    assert data["receipt_date"] == date
     assert data["supplier"] == "Doberman Beverages Inc."
     assert data["expected_pallet_count"] == 3
     assert data["actual_pallet_count"] == 0
@@ -26,14 +26,14 @@ def test_create_goods_receipt_success(client: TestClient):
 
 def test_create_goods_receipt_without_expected_pallet_count(client: TestClient):
     date = datetime.today().strftime(DATE_FORMAT_STRING)
-    response = client.post("/goods-receipts", json={"date": date, "supplier": "Doberman Beverages Inc."})
+    response = client.post("/goods-receipts", json={"receipt_date": date, "supplier": "Doberman Beverages Inc."})
     assert response.status_code == 201
     assert response.json()["expected_pallet_count"] is None
 
 
 def test_create_goods_receipt_missing_supplier_422(client: TestClient):
     date = datetime.today().strftime(DATE_FORMAT_STRING)
-    response = client.post("/goods-receipts", json={"date": date})
+    response = client.post("/goods-receipts", json={"receipt_date": date})
     assert response.status_code == 422
 
 
@@ -68,7 +68,7 @@ def test_list_goods_receipts_empty(client: TestClient):
 
 def test_list_goods_receipts_actual_pallet_count(client: TestClient, goods_receipt: int, pallet: int):
     date = datetime.today().strftime(DATE_FORMAT_STRING)
-    response = client.post("/goods-receipts", json={"date": date, "supplier": "Doberman Beverages Inc."})
+    response = client.post("/goods-receipts", json={"receipt_date": date, "supplier": "Doberman Beverages Inc."})
     assert response.status_code == 201
     empty_receipt = response.json()["id"]
 
@@ -78,20 +78,20 @@ def test_list_goods_receipts_actual_pallet_count(client: TestClient, goods_recei
     assert counts == {goods_receipt: 1, empty_receipt: 0}
 
 
-def test_list_goods_receipts_filter_date(client: TestClient, goods_receipt: int):
+def test_list_goods_receipts_filter_receipt_date(client: TestClient, goods_receipt: int):
     yesterday = (datetime.today() - relativedelta(days=1)).strftime(DATE_FORMAT_STRING)
-    response = client.post("/goods-receipts", json={"date": yesterday, "supplier": "Doberman Beverages Inc."})
+    response = client.post("/goods-receipts", json={"receipt_date": yesterday, "supplier": "Doberman Beverages Inc."})
     assert response.status_code == 201
     old_receipt = response.json()["id"]
 
-    response = client.get("/goods-receipts", params={"date": yesterday})
+    response = client.get("/goods-receipts", params={"receipt_date": yesterday})
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [old_receipt]
 
 
 def test_list_goods_receipts_filter_supplier(client: TestClient, goods_receipt: int):
     date = datetime.today().strftime(DATE_FORMAT_STRING)
-    response = client.post("/goods-receipts", json={"date": date, "supplier": "Jenkins Brewery"})
+    response = client.post("/goods-receipts", json={"receipt_date": date, "supplier": "Jenkins Brewery"})
     assert response.status_code == 201
 
     response = client.get("/goods-receipts", params={"supplier": "Doberman Beverages Inc."})
@@ -110,11 +110,22 @@ def test_update_goods_receipt_partial(client: TestClient, goods_receipt: int):
     data = response.json()
     assert data["supplier"] == "Jenkins Brewery"
     assert data["expected_pallet_count"] == 5
-    assert data["date"] == original["date"]
+    assert data["receipt_date"] == original["receipt_date"]
 
     response = client.get(f"/goods-receipts/{goods_receipt}")
     assert response.status_code == 200
     assert response.json() == data
+
+
+def test_update_goods_receipt_receipt_date(client: TestClient, goods_receipt: int):
+    yesterday = (datetime.today() - relativedelta(days=1)).strftime(DATE_FORMAT_STRING)
+    response = client.patch(f"/goods-receipts/{goods_receipt}", json={"receipt_date": yesterday})
+    assert response.status_code == 200
+    assert response.json()["receipt_date"] == yesterday
+
+    response = client.get(f"/goods-receipts/{goods_receipt}")
+    assert response.status_code == 200
+    assert response.json()["receipt_date"] == yesterday
 
 
 def test_update_goods_receipt_reset_expected_pallet_count(client: TestClient, goods_receipt: int):

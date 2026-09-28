@@ -183,7 +183,7 @@ def test_list_pallets_filter_container_type(client: TestClient, beverage: int, g
 
 def test_list_pallets_filter_goods_receipt_id(client: TestClient, beverage: int, pallet: int):
     date = datetime.today().strftime(DATE_FORMAT_STRING)
-    response = client.post("/goods-receipts", json={"date": date, "supplier": "Jenkins Brewery"})
+    response = client.post("/goods-receipts", json={"receipt_date": date, "supplier": "Jenkins Brewery"})
     assert response.status_code == 201
     other_receipt = response.json()["id"]
     created = create_pallet(client, beverage, other_receipt)
