@@ -34,7 +34,8 @@ beverage-logistics-api/
 │   ├── test_packaging_units.py
 │   └── test_pallet.py
 ├── docs/             # ER and use case diagrams
-├── requirements.txt
+├── requirements.txt       # runtime dependencies
+├── requirements-dev.txt   # + test dependencies
 ├── Dockerfile
 └── .dockerignore
 ```
@@ -179,8 +180,14 @@ part of the PostgreSQL/docker-compose extension stage (see
 ## Running tests
 
 ```powershell
+pip install -r requirements-dev.txt
 pytest
 ```
+
+`requirements-dev.txt` adds the test dependencies (pytest, httpx2 for
+FastAPI's `TestClient`, python-dateutil) on top of `requirements.txt`, which
+only contains what the app needs at runtime and is all the Docker image
+installs.
 
 Tests use an in-memory SQLite database via `dependency_overrides`, so they
 never touch the real `beverage_logistics.db`. Test data is created through
