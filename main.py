@@ -278,6 +278,9 @@ def delete_delivery(delivery_id: int, session: Session = Depends(get_session)):
     delete_items = session.exec(query).all()
     for item in delete_items:
         session.delete(item)
+    # Without ORM relationships the unit of work doesn't know that the items
+    # have to be deleted before the delivery, so enforce the order explicitly
+    session.flush()
     session.delete(delivery)
 
     try:
