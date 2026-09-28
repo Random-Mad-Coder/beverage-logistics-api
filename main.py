@@ -306,7 +306,17 @@ def list_goods_receipt(
     if supplier:
         query = query.where(GoodsReceipt.supplier == supplier)
 
-    return session.exec(query).all()
+    goods_receipts = session.exec(query).all()
+
+    goods_receipt_ids = [r.id for r in goods_receipts]
+    query = (
+        select(Pallet.goods_receipt_id, func.count())
+        .where(Pallet.goods_receipt_id.in_(goods_receipt_ids))
+        .group_by(Pallet.goods_receipt_id)
+    )
+    pallet_counts = dict(session.exec(query).all())
+
+    return [GoodsReceiptRead.model_validate(r, update={"actual_pallet_count": pallet_counts.get(r.id, 0)}) for r in goods_receipts]
 
 
 @app.get("/goods-receipts/{goods_receipt_id}", response_model=GoodsReceiptRead)
@@ -336,9 +346,13 @@ def update_goods_receipt(
     if not db_receipt:
         raise HTTPException(status_code=404, detail=f"Goods receipt with id {goods_receipt_id} not found")
 
-    # return only set values as a dict
-    changes = update.model_dump(exclude_none=True)
+    # return only values sent in the request as a dict
+    changes = update.model_dump(exclude_unset=True)
     for field, value in changes.items():
+        # expected_pallet_count is optional and can be reset via an explicit null,
+        # null for the required fields is ignored
+        if value is None and field != "expected_pallet_count":
+            continue
         setattr(db_receipt, field, value)
 
     session.add(db_receipt)
