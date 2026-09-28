@@ -1,59 +1,49 @@
+---
+config:
+  layout: elk
+---
 erDiagram
-    BEVERAGE ||--o{ KEG : "filled into"
-    BEVERAGE ||--o{ CRATE : "filled into"
-    BEVERAGE ||--o{ PALLET : "ordered as"
-    GOODS_RECEIPT ||--o{ PALLET : contains
-    PALLET ||--o{ KEG : "unpacked into"
-    PALLET ||--o{ CRATE : "unpacked into"
-    DELIVERY ||--o{ DELIVERY_KEG : contains
-    KEG ||--o{ DELIVERY_KEG : "included in"
-    DELIVERY ||--o{ DELIVERY_CRATE : contains
-    CRATE ||--o{ DELIVERY_CRATE : "included in"
+    direction LR
+    GOODS_RECEIPT ||..o{ PALLET : contains
+    BEVERAGE ||..o{ PALLET : "ordered as"
+    BEVERAGE ||..o{ PACKAGING_UNIT : "filled into"
+    PALLET |o..o{ PACKAGING_UNIT : "unpacked into"
+    PACKAGING_UNIT ||--o{ DELIVERY_ITEM : "included in"
+    DELIVERY ||--o{ DELIVERY_ITEM : contains
 
     BEVERAGE {
         int id PK
-        string name
-        string type
-    }
-    KEG {
-        int id PK
-        string size
-        string status
-        int beverage_id FK
-        date best_before_date
-        int received_via_pallet_id FK
-    }
-    CRATE {
-        int id PK
-        string container_type
-        string status
-        int beverage_id FK
-        date best_before_date
-        int received_via_pallet_id FK
+        string name UK
+        string type "beer | soft_drink"
     }
     GOODS_RECEIPT {
         int id PK
         date receipt_date
         string supplier
+        int expected_pallet_count "optional, from delivery slip"
     }
     PALLET {
         int id PK
         int goods_receipt_id FK
         int beverage_id FK
         string container_type
-        int quantity
+        int quantity ">= 0"
         date best_before_date
+    }
+    PACKAGING_UNIT {
+        int id PK
+        string container_type "keg_* | crate_*"
+        string status "full | empty | cleaned"
+        int beverage_id FK
+        date best_before_date
+        int received_via_pallet_id FK "optional"
     }
     DELIVERY {
         int id PK
         date delivery_date
         string customer
     }
-    DELIVERY_KEG {
-        int delivery_id FK
-        int keg_id FK
-    }
-    DELIVERY_CRATE {
-        int delivery_id FK
-        int crate_id FK
+    DELIVERY_ITEM {
+        int delivery_id PK, FK
+        int unit_id PK, FK
     }
