@@ -168,7 +168,13 @@ def create_delivery(
     existing_unit_ids = session.exec(query).all()
     nonexistent_unit_ids = set(delivery.unit_ids) - set(existing_unit_ids)
     if nonexistent_unit_ids:
-        raise HTTPException(status_code=409, detail=f"Inexistent packaging unit ids: {sorted(nonexistent_unit_ids)}")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Inexistent packaging unit ids",
+                "unit_ids": sorted(nonexistent_unit_ids),
+            }
+        )
     
     session.add(db_delivery)
     session.flush()
@@ -230,7 +236,13 @@ def update_delivery_payload(
     existing_new_unit_ids = session.exec(query).all()
     nonexistent_new_unit_ids = set(create_unit_ids) - set(existing_new_unit_ids)
     if nonexistent_new_unit_ids:
-        raise HTTPException(status_code=409, detail=f"Inexistent packaging unit ids: {sorted(nonexistent_new_unit_ids)}")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Inexistent packaging unit ids",
+                "unit_ids": sorted(nonexistent_new_unit_ids),
+            }
+        )
     session.add_all([DeliveryItem(delivery_id=delivery_id, unit_id=id) for id in create_unit_ids])
 
     delete_unit_ids = set(delivery_unit_ids) - set(update.unit_ids)
@@ -497,8 +509,14 @@ def unpack_pallet(pallet_id: int, session: Session = Depends(get_session)):
     delivery_units = session.exec(query).all()
 
     if delivery_units:
-        raise HTTPException(status_code=409, detail=f"Packaging units with ids {sorted([item.unit_id for item in delivery_units])} are still part of a delivery")
-
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Packaging units are still part of a delivery",
+                "unit_ids": sorted([item.unit_id for item in delivery_units]),
+            }
+        )
+    
     for item in units:
         session.delete(item)
 

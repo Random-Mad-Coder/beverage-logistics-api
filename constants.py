@@ -1,0 +1,1 @@
+DATE_FORMAT_STRING = "%Y-%m-%d"
