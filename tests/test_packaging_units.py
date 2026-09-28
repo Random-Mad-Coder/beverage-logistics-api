@@ -1,14 +1,8 @@
+from typing import Callable
 from fastapi.testclient import TestClient
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from constants import DATE_FORMAT_STRING
-
-
-def create_unit(client: TestClient, beverage_id: int, container_type: str = "keg_50l") -> dict:
-    bbdate = datetime.today() + relativedelta(years=1)
-    response = client.post("/packaging-units", json={"container_type": container_type, "beverage_id": beverage_id, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
-    assert response.status_code == 201
-    return response.json()
 
 
 def test_create_packaging_unit_success(client: TestClient, beverage: int):
@@ -55,8 +49,8 @@ def test_create_packaging_unit_invalid_container_type_422(client: TestClient, be
     assert response.status_code == 422
 
 
-def test_get_packaging_unit_success(client: TestClient, beverage: int):
-    created = create_unit(client, beverage)
+def test_get_packaging_unit_success(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    created = make_unit(beverage)
 
     response = client.get(f"/packaging-units/{created['id']}")
     assert response.status_code == 200
@@ -74,31 +68,31 @@ def test_list_packaging_units_empty(client: TestClient):
     assert response.json() == []
 
 
-def test_list_packaging_units_filter_beverage_name(client: TestClient, beverage: int):
+def test_list_packaging_units_filter_beverage_name(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
     response = client.post("/beverages", json={"name": "Jenkins Pils", "type": "beer"})
     assert response.status_code == 201
     other_beverage = response.json()["id"]
 
-    unit = create_unit(client, beverage)
-    create_unit(client, other_beverage)
+    unit = make_unit(beverage)
+    make_unit(other_beverage)
 
     response = client.get("/packaging-units", params={"beverage_name": "Jenkins Cola"})
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [unit["id"]]
 
 
-def test_list_packaging_units_filter_container_type(client: TestClient, beverage: int):
-    keg = create_unit(client, beverage, "keg_30l")
-    create_unit(client, beverage, "crate_24x033l")
+def test_list_packaging_units_filter_container_type(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    keg = make_unit(beverage, "keg_30l")
+    make_unit(beverage, "crate_24x033l")
 
     response = client.get("/packaging-units", params={"container_type": "keg_30l"})
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [keg["id"]]
 
 
-def test_list_packaging_units_filter_status(client: TestClient, beverage: int):
-    empty_unit = create_unit(client, beverage)
-    create_unit(client, beverage)
+def test_list_packaging_units_filter_status(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    empty_unit = make_unit(beverage)
+    make_unit(beverage)
 
     response = client.patch(f"/packaging-units/{empty_unit['id']}", json={"status": "empty"})
     assert response.status_code == 200
@@ -108,8 +102,8 @@ def test_list_packaging_units_filter_status(client: TestClient, beverage: int):
     assert [item["id"] for item in response.json()] == [empty_unit["id"]]
 
 
-def test_update_packaging_unit_status(client: TestClient, beverage: int):
-    created = create_unit(client, beverage)
+def test_update_packaging_unit_status(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    created = make_unit(beverage)
 
     response = client.patch(f"/packaging-units/{created['id']}", json={"status": "cleaned"})
     assert response.status_code == 200
@@ -120,8 +114,8 @@ def test_update_packaging_unit_status(client: TestClient, beverage: int):
     assert response.json()["status"] == "cleaned"
 
 
-def test_update_packaging_unit_missing_status_422(client: TestClient, beverage: int):
-    created = create_unit(client, beverage)
+def test_update_packaging_unit_missing_status_422(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    created = make_unit(beverage)
 
     response = client.patch(f"/packaging-units/{created['id']}", json={})
     assert response.status_code == 422
@@ -132,8 +126,8 @@ def test_update_packaging_unit_not_found_404(client: TestClient):
     assert response.status_code == 404
 
 
-def test_delete_packaging_unit_success(client: TestClient, beverage: int):
-    created = create_unit(client, beverage)
+def test_delete_packaging_unit_success(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    created = make_unit(beverage)
 
     response = client.delete(f"/packaging-units/{created['id']}")
     assert response.status_code == 204

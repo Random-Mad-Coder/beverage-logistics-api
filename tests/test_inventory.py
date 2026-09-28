@@ -1,17 +1,5 @@
+from typing import Callable
 from fastapi.testclient import TestClient
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
-from constants import DATE_FORMAT_STRING
-
-
-def create_units(client: TestClient, beverage_id: int, container_type: str, count: int) -> list[int]:
-    bbdate = datetime.today() + relativedelta(years=1)
-    unit_ids = []
-    for _ in range(count):
-        response = client.post("/packaging-units", json={"container_type": container_type, "beverage_id": beverage_id, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
-        assert response.status_code == 201
-        unit_ids.append(response.json()["id"])
-    return unit_ids
 
 
 def test_inventory_empty(client: TestClient):
@@ -25,24 +13,27 @@ def test_inventory_missing_reserve_422(client: TestClient):
     assert response.status_code == 422
 
 
-def test_inventory_below_reserve(client: TestClient, beverage: int):
-    create_units(client, beverage, "keg_50l", 2)
+def test_inventory_below_reserve(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    for _ in range(2):
+        make_unit(beverage, "keg_50l")
 
     response = client.get("/inventory", params={"reserve": 3})
     assert response.status_code == 200
     assert response.json() == [{"beverage_id": beverage, "beverage_name": "Jenkins Cola", "container_type": "keg_50l", "count": 2}]
 
 
-def test_inventory_at_reserve_not_reported(client: TestClient, beverage: int):
-    create_units(client, beverage, "keg_50l", 3)
+def test_inventory_at_reserve_not_reported(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    for _ in range(3):
+        make_unit(beverage, "keg_50l")
 
     response = client.get("/inventory", params={"reserve": 3})
     assert response.status_code == 200
     assert response.json() == []
 
 
-def test_inventory_kegs_and_crates_counted_separately(client: TestClient, beverage: int, unpacked_pallet: list[int]):
-    create_units(client, beverage, "keg_50l", 2)
+def test_inventory_kegs_and_crates_counted_separately(client: TestClient, beverage: int, unpacked_pallet: list[int], make_unit: Callable[..., dict]):
+    for _ in range(2):
+        make_unit(beverage, "keg_50l")
 
     # 64 crates from the unpacked pallet are above the reserve, the 2 kegs are below
     response = client.get("/inventory", params={"reserve": 10})
@@ -55,21 +46,23 @@ def test_inventory_kegs_and_crates_counted_separately(client: TestClient, bevera
     assert counts == {"keg_50l": 2, "crate_20x05l": len(unpacked_pallet)}
 
 
-def test_inventory_beverages_counted_separately(client: TestClient, beverage: int):
+def test_inventory_beverages_counted_separately(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
     response = client.post("/beverages", json={"name": "Jenkins Pils", "type": "beer"})
     assert response.status_code == 201
     other_beverage = response.json()["id"]
 
-    create_units(client, beverage, "keg_50l", 1)
-    create_units(client, other_beverage, "keg_50l", 3)
+    for _ in range(1):
+        make_unit(beverage, "keg_50l")
+    for _ in range(3):
+        make_unit(other_beverage, "keg_50l")
 
     response = client.get("/inventory", params={"reserve": 2})
     assert response.status_code == 200
     assert response.json() == [{"beverage_id": beverage, "beverage_name": "Jenkins Cola", "container_type": "keg_50l", "count": 1}]
 
 
-def test_inventory_counts_only_full_units(client: TestClient, beverage: int):
-    unit_ids = create_units(client, beverage, "keg_30l", 3)
+def test_inventory_counts_only_full_units(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    unit_ids = [make_unit(beverage, "keg_30l")["id"] for _ in range(3)]
 
     for unit_id, status in zip(unit_ids[:2], ["empty", "cleaned"]):
         response = client.patch(f"/packaging-units/{unit_id}", json={"status": status})
@@ -83,10 +76,10 @@ def test_inventory_counts_only_full_units(client: TestClient, beverage: int):
 # Only full stock is reported. Combinations without any full units are left out on
 # purpose: whether empty or cleaned containers mean a restocking need (or are just
 # leftovers of legacy stock) is for the client to decide.
-def test_inventory_no_full_units_not_reported(client: TestClient, beverage: int):
-    unit_ids = create_units(client, beverage, "keg_50l", 1)
+def test_inventory_no_full_units_not_reported(client: TestClient, beverage: int, make_unit: Callable[..., dict]):
+    unit = make_unit(beverage, "keg_50l")
 
-    response = client.patch(f"/packaging-units/{unit_ids[0]}", json={"status": "empty"})
+    response = client.patch(f"/packaging-units/{unit['id']}", json={"status": "empty"})
     assert response.status_code == 200
 
     response = client.get("/inventory", params={"reserve": 5})

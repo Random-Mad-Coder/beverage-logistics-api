@@ -1,3 +1,4 @@
+from typing import Callable
 from fastapi.testclient import TestClient
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -7,13 +8,6 @@ from constants import DATE_FORMAT_STRING
 # update_delivery_payload and delete_delivery only trigger when a packaging unit is
 # deleted concurrently between the upfront existence check and the commit. That race
 # cannot be reproduced deterministically via the API, so these paths are not tested.
-
-
-def create_delivery(client: TestClient, unit_ids: list[int], customer: str = "Café Jenkins") -> dict:
-    date = datetime.today().strftime(DATE_FORMAT_STRING)
-    response = client.post("/deliveries", json={"delivery_date": date, "customer": customer, "unit_ids": unit_ids})
-    assert response.status_code == 201
-    return response.json()
 
 
 def test_create_delivery_success(client: TestClient, unpacked_pallet: list[int]):
@@ -49,9 +43,9 @@ def test_create_delivery_duplicate_unit_ids(client: TestClient, unpacked_pallet:
 
 # Deliveries are historic records and packaging units are reused (full -> empty ->
 # cleaned -> full), so the same unit may appear in several deliveries.
-def test_create_delivery_unit_in_multiple_deliveries(client: TestClient, unpacked_pallet: list[int]):
-    first = create_delivery(client, unpacked_pallet[:1])
-    second = create_delivery(client, unpacked_pallet[:1])
+def test_create_delivery_unit_in_multiple_deliveries(client: TestClient, unpacked_pallet: list[int], make_delivery: Callable[..., dict]):
+    first = make_delivery(unpacked_pallet[:1])
+    second = make_delivery(unpacked_pallet[:1])
 
     for delivery_id in (first["id"], second["id"]):
         response = client.get(f"/deliveries/{delivery_id}")
@@ -101,10 +95,10 @@ def test_list_deliveries_empty(client: TestClient):
     assert response.json() == []
 
 
-def test_list_deliveries_unit_ids_per_delivery(client: TestClient, unpacked_pallet: list[int]):
-    first = create_delivery(client, unpacked_pallet[:2])
-    second = create_delivery(client, unpacked_pallet[2:5])
-    empty = create_delivery(client, [])
+def test_list_deliveries_unit_ids_per_delivery(client: TestClient, unpacked_pallet: list[int], make_delivery: Callable[..., dict]):
+    first = make_delivery(unpacked_pallet[:2])
+    second = make_delivery(unpacked_pallet[2:5])
+    empty = make_delivery([])
 
     response = client.get("/deliveries")
     assert response.status_code == 200
@@ -116,8 +110,8 @@ def test_list_deliveries_unit_ids_per_delivery(client: TestClient, unpacked_pall
     }
 
 
-def test_list_deliveries_filter_delivery_date(client: TestClient):
-    create_delivery(client, [])
+def test_list_deliveries_filter_delivery_date(client: TestClient, make_delivery: Callable[..., dict]):
+    make_delivery([])
     yesterday = (datetime.today() - relativedelta(days=1)).strftime(DATE_FORMAT_STRING)
     response = client.post("/deliveries", json={"delivery_date": yesterday, "customer": "Café Jenkins"})
     assert response.status_code == 201
@@ -128,9 +122,9 @@ def test_list_deliveries_filter_delivery_date(client: TestClient):
     assert [item["id"] for item in response.json()] == [old_delivery]
 
 
-def test_list_deliveries_filter_customer(client: TestClient):
-    create_delivery(client, [], customer="Thirsty People Ltd.")
-    created = create_delivery(client, [], customer="Café Jenkins")
+def test_list_deliveries_filter_customer(client: TestClient, make_delivery: Callable[..., dict]):
+    make_delivery([], customer="Thirsty People Ltd.")
+    created = make_delivery([], customer="Café Jenkins")
 
     response = client.get("/deliveries", params={"customer": "Café Jenkins"})
     assert response.status_code == 200
@@ -171,8 +165,8 @@ def test_update_delivery_metadata_not_found_404(client: TestClient):
     assert response.status_code == 404
 
 
-def test_update_delivery_payload_add(client: TestClient, unpacked_pallet: list[int]):
-    created = create_delivery(client, unpacked_pallet[:2])
+def test_update_delivery_payload_add(client: TestClient, unpacked_pallet: list[int], make_delivery: Callable[..., dict]):
+    created = make_delivery(unpacked_pallet[:2])
 
     response = client.patch(f"/deliveries/{created['id']}/payload", json={"unit_ids": unpacked_pallet[:4]})
     assert response.status_code == 200
@@ -183,8 +177,8 @@ def test_update_delivery_payload_add(client: TestClient, unpacked_pallet: list[i
     assert sorted(response.json()["unit_ids"]) == sorted(unpacked_pallet[:4])
 
 
-def test_update_delivery_payload_remove(client: TestClient, unpacked_pallet: list[int]):
-    created = create_delivery(client, unpacked_pallet[:4])
+def test_update_delivery_payload_remove(client: TestClient, unpacked_pallet: list[int], make_delivery: Callable[..., dict]):
+    created = make_delivery(unpacked_pallet[:4])
 
     response = client.patch(f"/deliveries/{created['id']}/payload", json={"unit_ids": unpacked_pallet[:1]})
     assert response.status_code == 200
@@ -199,8 +193,8 @@ def test_update_delivery_payload_remove(client: TestClient, unpacked_pallet: lis
     assert response.status_code == 204
 
 
-def test_update_delivery_payload_add_and_remove(client: TestClient, unpacked_pallet: list[int]):
-    created = create_delivery(client, unpacked_pallet[:3])
+def test_update_delivery_payload_add_and_remove(client: TestClient, unpacked_pallet: list[int], make_delivery: Callable[..., dict]):
+    created = make_delivery(unpacked_pallet[:3])
     new_unit_ids = unpacked_pallet[1:3] + unpacked_pallet[5:7]
 
     response = client.patch(f"/deliveries/{created['id']}/payload", json={"unit_ids": new_unit_ids})
@@ -212,8 +206,8 @@ def test_update_delivery_payload_add_and_remove(client: TestClient, unpacked_pal
     assert sorted(response.json()["unit_ids"]) == sorted(new_unit_ids)
 
 
-def test_update_delivery_payload_duplicate_unit_ids(client: TestClient, unpacked_pallet: list[int]):
-    created = create_delivery(client, unpacked_pallet[:1])
+def test_update_delivery_payload_duplicate_unit_ids(client: TestClient, unpacked_pallet: list[int], make_delivery: Callable[..., dict]):
+    created = make_delivery(unpacked_pallet[:1])
 
     response = client.patch(f"/deliveries/{created['id']}/payload", json={"unit_ids": [unpacked_pallet[0], unpacked_pallet[1], unpacked_pallet[1]]})
     assert response.status_code == 200
@@ -234,8 +228,8 @@ def test_update_delivery_payload_clear(client: TestClient, delivery: dict):
     assert response.json()["unit_ids"] == []
 
 
-def test_update_delivery_payload_invalid_unit_ids_409(client: TestClient, unpacked_pallet: list[int]):
-    created = create_delivery(client, unpacked_pallet[:3])
+def test_update_delivery_payload_invalid_unit_ids_409(client: TestClient, unpacked_pallet: list[int], make_delivery: Callable[..., dict]):
+    created = make_delivery(unpacked_pallet[:3])
 
     response = client.patch(f"/deliveries/{created['id']}/payload", json={"unit_ids": unpacked_pallet[1:4] + [1001, 1000]})
     assert response.status_code == 409

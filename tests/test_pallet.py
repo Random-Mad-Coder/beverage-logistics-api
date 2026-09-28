@@ -1,14 +1,8 @@
+from typing import Callable
 from fastapi.testclient import TestClient
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from constants import DATE_FORMAT_STRING
-
-
-def create_pallet(client: TestClient, beverage_id: int, goods_receipt_id: int, container_type: str = "keg_50l", best_before_date: datetime | None = None) -> dict:
-    bbdate = best_before_date or datetime.today() + relativedelta(years=1)
-    response = client.post("/pallets", json={"container_type": container_type, "beverage_id": beverage_id, "goods_receipt_id": goods_receipt_id, "quantity": 8, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
-    assert response.status_code == 201
-    return response.json()
 
 
 def test_unpack_pallet_noop(client: TestClient, pallet: int):
@@ -134,8 +128,8 @@ def test_create_pallet_negative_quantity_422(client: TestClient, beverage: int, 
     assert response.status_code == 422
 
 
-def test_get_pallet_success(client: TestClient, beverage: int, goods_receipt: int):
-    created = create_pallet(client, beverage, goods_receipt)
+def test_get_pallet_success(client: TestClient, beverage: int, goods_receipt: int, make_pallet: Callable[..., dict]):
+    created = make_pallet(beverage, goods_receipt)
 
     response = client.get(f"/pallets/{created['id']}")
     assert response.status_code == 200
@@ -153,40 +147,40 @@ def test_list_pallets_empty(client: TestClient):
     assert response.json() == []
 
 
-def test_list_pallets_filter_best_before(client: TestClient, beverage: int, goods_receipt: int, pallet: int):
+def test_list_pallets_filter_best_before(client: TestClient, beverage: int, goods_receipt: int, pallet: int, make_pallet: Callable[..., dict]):
     bbdate = datetime.today() + relativedelta(years=2)
-    created = create_pallet(client, beverage, goods_receipt, best_before_date=bbdate)
+    created = make_pallet(beverage, goods_receipt, best_before_date=bbdate)
 
     response = client.get("/pallets", params={"best_before": bbdate.strftime(DATE_FORMAT_STRING)})
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [created["id"]]
 
 
-def test_list_pallets_filter_beverage_id(client: TestClient, goods_receipt: int, pallet: int):
+def test_list_pallets_filter_beverage_id(client: TestClient, goods_receipt: int, pallet: int, make_pallet: Callable[..., dict]):
     response = client.post("/beverages", json={"name": "Jenkins Pils", "type": "beer"})
     assert response.status_code == 201
     other_beverage = response.json()["id"]
-    created = create_pallet(client, other_beverage, goods_receipt)
+    created = make_pallet(other_beverage, goods_receipt)
 
     response = client.get("/pallets", params={"beverage_id": other_beverage})
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [created["id"]]
 
 
-def test_list_pallets_filter_container_type(client: TestClient, beverage: int, goods_receipt: int, pallet: int):
-    created = create_pallet(client, beverage, goods_receipt, container_type="keg_20l")
+def test_list_pallets_filter_container_type(client: TestClient, beverage: int, goods_receipt: int, pallet: int, make_pallet: Callable[..., dict]):
+    created = make_pallet(beverage, goods_receipt, container_type="keg_20l")
 
     response = client.get("/pallets", params={"container_type": "keg_20l"})
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [created["id"]]
 
 
-def test_list_pallets_filter_goods_receipt_id(client: TestClient, beverage: int, pallet: int):
+def test_list_pallets_filter_goods_receipt_id(client: TestClient, beverage: int, pallet: int, make_pallet: Callable[..., dict]):
     date = datetime.today().strftime(DATE_FORMAT_STRING)
     response = client.post("/goods-receipts", json={"receipt_date": date, "supplier": "Jenkins Brewery"})
     assert response.status_code == 201
     other_receipt = response.json()["id"]
-    created = create_pallet(client, beverage, other_receipt)
+    created = make_pallet(beverage, other_receipt)
 
     response = client.get("/pallets", params={"goods_receipt_id": other_receipt})
     assert response.status_code == 200

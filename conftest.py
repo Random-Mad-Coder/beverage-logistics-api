@@ -71,3 +71,33 @@ def delivery_fixture(client: TestClient, unpacked_pallet: list[int]):
     response = client.post("/deliveries", json={"delivery_date": f"{date.strftime(DATE_FORMAT_STRING)}", "customer": "Thirsty People Ltd.", "unit_ids": unpacked_pallet})
     assert response.status_code == 201
     return response.json()
+
+
+@pytest.fixture(name="make_unit")
+def make_unit_fixture(client: TestClient):
+    def make_unit(beverage_id: int, container_type: str = "keg_50l") -> dict:
+        bbdate = datetime.today() + relativedelta(years=1)
+        response = client.post("/packaging-units", json={"container_type": container_type, "beverage_id": beverage_id, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
+        assert response.status_code == 201
+        return response.json()
+    return make_unit
+
+
+@pytest.fixture(name="make_pallet")
+def make_pallet_fixture(client: TestClient):
+    def make_pallet(beverage_id: int, goods_receipt_id: int, container_type: str = "keg_50l", best_before_date: datetime | None = None) -> dict:
+        bbdate = best_before_date or datetime.today() + relativedelta(years=1)
+        response = client.post("/pallets", json={"container_type": container_type, "beverage_id": beverage_id, "goods_receipt_id": goods_receipt_id, "quantity": 8, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
+        assert response.status_code == 201
+        return response.json()
+    return make_pallet
+
+
+@pytest.fixture(name="make_delivery")
+def make_delivery_fixture(client: TestClient):
+    def make_delivery(unit_ids: list[int], customer: str = "Café Jenkins") -> dict:
+        date = datetime.today().strftime(DATE_FORMAT_STRING)
+        response = client.post("/deliveries", json={"delivery_date": date, "customer": customer, "unit_ids": unit_ids})
+        assert response.status_code == 201
+        return response.json()
+    return make_delivery

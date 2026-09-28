@@ -1,14 +1,8 @@
+from typing import Callable
 from fastapi.testclient import TestClient
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from constants import DATE_FORMAT_STRING
-
-
-def create_pallet(client: TestClient, beverage_id: int, goods_receipt_id: int) -> int:
-    bbdate = datetime.today() + relativedelta(years=1)
-    response = client.post("/pallets", json={"container_type": "keg_50l", "beverage_id": beverage_id, "goods_receipt_id": goods_receipt_id, "quantity": 8, "best_before_date": bbdate.strftime(DATE_FORMAT_STRING)})
-    assert response.status_code == 201
-    return response.json()["id"]
 
 
 def test_create_goods_receipt_success(client: TestClient):
@@ -47,8 +41,8 @@ def test_get_goods_receipt_success(client: TestClient, goods_receipt: int):
     assert data["actual_pallet_count"] == 0
 
 
-def test_get_goods_receipt_actual_pallet_count(client: TestClient, beverage: int, goods_receipt: int, pallet: int):
-    create_pallet(client, beverage, goods_receipt)
+def test_get_goods_receipt_actual_pallet_count(client: TestClient, beverage: int, goods_receipt: int, pallet: int, make_pallet: Callable[..., dict]):
+    make_pallet(beverage, goods_receipt)
 
     response = client.get(f"/goods-receipts/{goods_receipt}")
     assert response.status_code == 200
