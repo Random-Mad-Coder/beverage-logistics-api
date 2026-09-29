@@ -1,22 +1,22 @@
-"""
-"""
-import json
+"""SQLModel entities, enums and request/response schemas of the Beverage Logistics API."""
 from datetime import date
 from enum import Enum
 from typing import Optional
+from pydantic import field_validator
 from sqlmodel import SQLModel, Field
 
 # ---------- General Business Logic ----------
 
 class ContainerType(str, Enum):
-    KEG = "keg"
+    KEG_20L = "keg_20l"
+    KEG_30L = "keg_30l"
+    KEG_50L = "keg_50l"
     CRATE_20X05L = "crate_20x05l"
     CRATE_24X033L = "crate_24x033l"
 
 class Status(str, Enum):
     EMPTY = "empty"
     CLEANED = "cleaned"
-    IN_DELIVERY = "in_delivery"
     FULL = "full"
 
 # Consciously conflated water and lemonade into a soft_drink category
@@ -41,6 +41,78 @@ class BeverageCreate(BeverageBase):
 class BeverageRead(BeverageBase):
     id: int
 
+# ---------- Errors ----------
+
+class ErrorResponse(SQLModel):
+    detail: str
+
+class UnitConflictDetail(SQLModel):
+    message: str
+    unit_ids: list[int]
+
+# 409 responses listing packaging unit ids use the structured detail,
+# conflicts caught reactively from the database use a plain string
+class UnitConflictResponse(SQLModel):
+    detail: UnitConflictDetail | str
+
+# ---------- Delivery ----------
+
+def deduplicate_unit_ids(unit_ids: list[int]) -> list[int]:
+    # dict.fromkeys drops duplicates while keeping the order they were sent in
+    return list(dict.fromkeys(unit_ids))
+
+class DeliveryBase(SQLModel):
+    delivery_date: date
+    customer: str
+
+class Delivery(DeliveryBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+class DeliveryCreate(DeliveryBase):
+    unit_ids: list[int] = []
+
+    _deduplicate_unit_ids = field_validator("unit_ids")(deduplicate_unit_ids)
+
+class DeliveryRead(DeliveryBase):
+    id: int
+    unit_ids: list[int]
+
+class DeliveryMetaDataUpdate(SQLModel):
+    delivery_date: Optional[date] = None
+    customer: Optional[str] = None
+
+class DeliveryPayloadUpdate(SQLModel):
+    unit_ids: list[int] = Field(description="Complete new list of packaging unit ids; duplicates are removed")
+
+    _deduplicate_unit_ids = field_validator("unit_ids")(deduplicate_unit_ids)
+
+class DeliveryItem(SQLModel, table=True):
+    delivery_id: int = Field(primary_key=True, foreign_key="delivery.id")
+    unit_id: int = Field(primary_key=True, foreign_key="packaging_unit.id")
+
+# ---------- GoodsReceipt ----------
+
+class GoodsReceiptBase(SQLModel):
+    receipt_date: date
+    supplier: str
+    expected_pallet_count: Optional[int] = Field(default=None, description="Pallet count stated on the delivery slip")
+
+class GoodsReceipt(GoodsReceiptBase, table=True):
+    __tablename__ = "goods_receipt"
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+class GoodsReceiptCreate(GoodsReceiptBase):
+    pass
+
+class GoodsReceiptRead(GoodsReceiptBase):
+    id: int
+    actual_pallet_count: int = Field(description="Number of pallets recorded for this goods receipt, a checksum against expected_pallet_count")
+
+class GoodsReceiptUpdate(SQLModel):
+    receipt_date: Optional[date] = None
+    supplier: Optional[str] = None
+    expected_pallet_count: Optional[int] = Field(default=None, description="Pallet count stated on the delivery slip; send null to reset it")
+
 # ---------- Inventory ----------
 
 class InventoryReport(SQLModel):
@@ -49,74 +121,52 @@ class InventoryReport(SQLModel):
     container_type: ContainerType
     count: int
 
-# ---------- Crate ----------
+# ---------- PackagingUnit ----------
 
-class CrateBase(SQLModel):
+class PackagingUnitBase(SQLModel):
     container_type: ContainerType
     beverage_id: int
-    status: Status = Status.EMPTY
+    status: Status = Status.FULL
+    best_before_date: date
+    received_via_pallet_id: Optional[int] = Field(default=None, description="Pallet this unit was unpacked from, empty for units created directly")
 
-class Crate(CrateBase, table=True):
+class PackagingUnit(PackagingUnitBase, table=True):
+    __tablename__ = "packaging_unit"
     id: Optional[int] = Field(default=None, primary_key=True)
     beverage_id: int = Field(foreign_key="beverage.id")
+    received_via_pallet_id: Optional[int] = Field(default=None, foreign_key="pallet.id")
 
-class CrateCreate(CrateBase):
+class PackagingUnitCreate(PackagingUnitBase):
     pass
 
-class CrateRead(CrateBase):
+class PackagingUnitRead(PackagingUnitBase):
     id: int
 
-class CrateStatusUpdate(SQLModel):
+class PackagingUnitUpdate(SQLModel):
     status: Status
 
-# ---------- Keg ----------
+# ---------- Pallet ----------
 
-class KegBase(SQLModel):
-    size: str  # "20l", "30l", "50l"
+class PalletBase(SQLModel):
+    container_type: ContainerType
     beverage_id: int
-    status: Status = Status.EMPTY
+    goods_receipt_id: int
+    quantity: int = Field(ge=0)
+    best_before_date: date
 
-class Keg(KegBase, table=True):
+class Pallet(PalletBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     beverage_id: int = Field(foreign_key="beverage.id")
+    goods_receipt_id: int = Field(foreign_key="goods_receipt.id")
 
-class KegCreate(KegBase):
+class PalletCreate(PalletBase):
     pass
 
-class KegRead(KegBase):
+class PalletRead(PalletBase):
     id: int
 
-class KegStatusUpdate(SQLModel):
-    status: Status
-
-# ---------- Delivery ----------
-
-class DeliveryBase(SQLModel):
-    date: date
-    customer: str
-
-class Delivery(DeliveryBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    # SQLite cannot store lists -> stored as JSON text.
-    # Externally (API) clients just see a normal list of ints.
-    keg_ids_json: str = "[]"
-
-    def get_keg_ids(self) -> list[int]:
-        return json.loads(self.keg_ids_json)
-
-    def set_keg_ids(self, keg_ids: list[int]) -> None:
-        self.keg_ids_json = json.dumps(keg_ids)
-
-class DeliveryCreate(DeliveryBase):
-    keg_ids: list[int] = []
-
-class DeliveryRead(DeliveryBase):
-    id: int
-    keg_ids: list[int]
-
-class DeliveryMetaDataUpdate(SQLModel):
-    date: Optional[date] = None
-    customer: Optional[str] = None
-
-class DeliveryPayloadUpdate(SQLModel):
-    keg_ids: list[int]
+class PalletUpdate(SQLModel):
+    container_type: Optional[ContainerType] = None
+    beverage_id: Optional[int] = None
+    quantity: Optional[int] = Field(default=None, ge=0)
+    best_before_date: Optional[date] = None
