@@ -28,6 +28,7 @@ beverage-logistics-api/
 ├── constants.py      # gemeinsame Konstanten (Datumsformat, Fehlermeldungen)
 ├── conftest.py       # pytest-Fixtures (Test-DB, Test-Client, Factories)
 ├── tests/
+│   ├── test_beverages.py
 │   ├── test_deliveries.py
 │   ├── test_goods_receipts.py
 │   ├── test_inventory.py
@@ -170,6 +171,10 @@ uvicorn main:app --reload
 
 Die API ist dann unter `http://localhost:8000` erreichbar, die interaktive
 Dokumentation unter `http://localhost:8000/docs`.
+
+Das Logging der SQL-Statements ist standardmäßig aus. Um jedes SQL-Statement
+zu loggen, vor dem Start `SQL_ECHO=true` setzen (`$env:SQL_ECHO = "true"` in
+PowerShell bzw. `docker run -e SQL_ECHO=true ...` für den Container).
 
 ## Mit Docker ausführen
 

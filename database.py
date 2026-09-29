@@ -1,3 +1,5 @@
+import os
+
 from sqlmodel import SQLModel, Session, create_engine
 from sqlalchemy import event
 
@@ -19,10 +21,13 @@ def get_session():
 # A single file is enough - no DB server needed for the minimal build.
 DATABASE_URL = "sqlite:///./beverage_logistics.db"
 
+# SQL statement logging is off by default; set SQL_ECHO=true to enable it.
+SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() == "true"
+
 # check_same_thread=False is standard for SQLite + FastAPI,
 # because FastAPI can process requests across threads.
 engine = create_engine(
-    DATABASE_URL, echo=True, connect_args={"check_same_thread": False}
+    DATABASE_URL, echo=SQL_ECHO, connect_args={"check_same_thread": False}
 )
 
 enable_foreign_keys(engine)
